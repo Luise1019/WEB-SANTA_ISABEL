@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Ejecución Presupuestal — {{project.name}}</title>
+  <link rel="stylesheet" href="./common.css" />
+</head>
+<body>
+  <header class="brand">
+    {{#if branding.logoUrl}}<img src="{{branding.logoUrl}}" class="logo" />{{/if}}
+    <h1>Ejecución Presupuestal</h1>
+    <h2>{{project.name}}</h2>
+  </header>
+
+  <section>
+    <h3>Por capítulo</h3>
+    <p>Plantilla M10 — placeholder. Aquí va la tabla presupuesto vs real con %.</p>
+  </section>
+
+  <footer>
+    <small>Generado el {{generatedAt}} · {{branding.companyName}}</small>
+  </footer>
+</body>
+</html>

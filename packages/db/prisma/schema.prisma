@@ -1,0 +1,789 @@
+// Plataforma de gestión de proyectos inmobiliarios — schema Prisma
+// Single-tenant. Tabla Organization existe para extensibilidad futura.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// NÚCLEO: Organización, usuarios, roles, auditoría
+// ============================================================
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  taxId     String?  @unique
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  projects Project[]
+}
+
+enum UserRole {
+  GERENTE
+  DIRECTOR_OBRA
+  CONTADOR
+  COMERCIAL
+  AUDITOR
+}
+
+model User {
+  id              String    @id @default(uuid())
+  organizationId  String
+  email           String    @unique
+  passwordHash    String
+  fullName        String
+  role            UserRole  @default(GERENTE)
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  memberships     ProjectMember[]
+  auditLogs       AuditLog[]
+  changeOrders    ChangeOrder[]    @relation("ChangeOrderCreator")
+  approvals       Approval[]
+  baselines       BudgetBaseline[] @relation("BaselineCreator")
+  importJobs      ImportJob[]
+  generatedReports GeneratedReport[]
+
+  @@index([organizationId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  entityType String
+  entityId   String?
+  diff       Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+}
+
+// ============================================================
+// PROYECTOS
+// ============================================================
+
+enum HousingType {
+  VIS
+  VIP
+  NO_VIS
+  COMERCIAL
+  MIXTO
+}
+
+enum ProjectStatus {
+  PREFACTIBILIDAD
+  FACTIBILIDAD
+  EJECUCION
+  CIERRE
+  ARCHIVADO
+}
+
+model Project {
+  id               String        @id @default(uuid())
+  organizationId   String
+  code             String
+  name             String
+  housingType      HousingType
+  status           ProjectStatus @default(PREFACTIBILIDAD)
+  city             String
+  department       String
+  startDate        DateTime
+  expectedEndDate  DateTime
+  totalAreaM2      Decimal?      @db.Decimal(18, 4)
+  saleableAreaM2   Decimal?      @db.Decimal(18, 4)
+  description      String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id])
+  members      ProjectMember[]
+  chapters     Chapter[]
+  aiuConfig    AIUConfig?
+  baselines    BudgetBaseline[]
+  tasks        Task[]
+  milestones   Milestone[]
+  scheduleBaselines ScheduleBaseline[]
+  cashAccounts CashFlowAccount[]
+  cashEntries  CashFlowEntry[]
+  cashTransactions CashTransaction[]
+  loans        LoanFacility[]
+  partnerContributions PartnerContribution[]
+  towers       Tower[]
+  units        Unit[]
+  changeOrders ChangeOrder[]
+  reports      GeneratedReport[]
+  importJobs   ImportJob[]
+
+  @@unique([organizationId, code])
+  @@index([status])
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      UserRole
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId])
+}
+
+// ============================================================
+// PRESUPUESTO: Capítulos, ítems, APU, recursos, AIU, baseline
+// ============================================================
+
+model Chapter {
+  id        String   @id @default(uuid())
+  projectId String
+  code      String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subchapters  Subchapter[]
+  cashEntries  CashFlowEntry[]
+  impacts      ChangeOrderImpact[]
+
+  @@unique([projectId, code])
+  @@index([projectId])
+}
+
+model Subchapter {
+  id        String   @id @default(uuid())
+  chapterId String
+  code      String
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chapter Chapter      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  items   BudgetItem[]
+
+  @@unique([chapterId, code])
+}
+
+enum ResourceType {
+  MANO_OBRA
+  MATERIAL
+  EQUIPO
+  SUBCONTRATO
+}
+
+model Resource {
+  id        String       @id @default(uuid())
+  type      ResourceType
+  code      String       @unique
+  name      String
+  unit      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  rates       ResourceRate[]
+  components  APUComponent[]
+  assignments TaskAssignment[]
+}
+
+model ResourceRate {
+  id             String   @id @default(uuid())
+  resourceId     String
+  effectiveDate  DateTime
+  unitCost       Decimal  @db.Decimal(18, 4)
+  createdAt      DateTime @default(now())
+
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, effectiveDate])
+  @@index([resourceId, effectiveDate])
+}
+
+model APU {
+  id        String   @id @default(uuid())
+  code      String
+  name      String
+  unit      String
+  version   Int      @default(1)
+  isLibrary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components APUComponent[]
+  items      BudgetItem[]
+
+  @@unique([code, version])
+}
+
+model APUComponent {
+  id          String  @id @default(uuid())
+  apuId       String
+  resourceId  String
+  quantity    Decimal @db.Decimal(18, 6)
+  wasteFactor Decimal @default(0) @db.Decimal(8, 4)
+  performance Decimal? @db.Decimal(18, 6)
+
+  apu      APU      @relation(fields: [apuId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id])
+
+  @@index([apuId])
+}
+
+model BudgetItem {
+  id           String   @id @default(uuid())
+  subchapterId String
+  apuId        String?
+  code         String
+  description  String
+  unit         String
+  quantity     Decimal  @db.Decimal(18, 4)
+  unitCost     Decimal  @db.Decimal(18, 4)
+  totalCost    Decimal  @db.Decimal(18, 2)
+  order        Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subchapter      Subchapter             @relation(fields: [subchapterId], references: [id], onDelete: Cascade)
+  apu             APU?                   @relation(fields: [apuId], references: [id])
+  taskAllocations TaskBudgetAllocation[]
+  cashEntries     CashFlowEntry[]
+  impacts         ChangeOrderImpact[]
+
+  @@index([subchapterId])
+}
+
+model AIUConfig {
+  id                 String  @id @default(uuid())
+  projectId          String  @unique
+  administracionPct  Decimal @db.Decimal(6, 4)
+  imprevistosPct     Decimal @db.Decimal(6, 4)
+  utilidadPct        Decimal @db.Decimal(6, 4)
+  ivaUtilidadPct     Decimal @default(19) @db.Decimal(6, 4)
+  appliesToIndirect  Boolean @default(false)
+  updatedAt          DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model BudgetBaseline {
+  id          String   @id @default(uuid())
+  projectId   String
+  version     Int
+  label       String
+  frozenAt    DateTime @default(now())
+  snapshot    Json
+  createdById String
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("BaselineCreator", fields: [createdById], references: [id])
+
+  @@unique([projectId, version])
+}
+
+// ============================================================
+// CRONOGRAMA: Tareas, dependencias, recursos, hitos
+// ============================================================
+
+enum TaskKind {
+  SUMMARY
+  TASK
+  MILESTONE
+}
+
+enum DependencyType {
+  FS
+  SS
+  FF
+  SF
+}
+
+model Task {
+  id            String   @id @default(uuid())
+  projectId     String
+  parentId      String?
+  code          String
+  name          String
+  kind          TaskKind @default(TASK)
+  plannedStart  DateTime
+  plannedEnd    DateTime
+  actualStart   DateTime?
+  actualEnd     DateTime?
+  durationDays  Int
+  progress      Decimal  @default(0) @db.Decimal(6, 4)
+  order         Int      @default(0)
+  isCritical    Boolean  @default(false)
+  earlyStart    DateTime?
+  earlyFinish   DateTime?
+  lateStart     DateTime?
+  lateFinish    DateTime?
+  totalFloat    Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project              Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent               Task?                  @relation("TaskHierarchy", fields: [parentId], references: [id])
+  children             Task[]                 @relation("TaskHierarchy")
+  predecessors         Dependency[]           @relation("Successor")
+  successors           Dependency[]           @relation("Predecessor")
+  assignments          TaskAssignment[]
+  budgetAllocations    TaskBudgetAllocation[]
+
+  @@unique([projectId, code])
+  @@index([projectId, plannedStart])
+}
+
+model Dependency {
+  id            String         @id @default(uuid())
+  predecessorId String
+  successorId   String
+  type          DependencyType @default(FS)
+  lagDays       Int            @default(0)
+
+  predecessor Task @relation("Predecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   Task @relation("Successor", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+}
+
+model TaskAssignment {
+  id         String  @id @default(uuid())
+  taskId     String
+  resourceId String
+  units      Decimal @default(1) @db.Decimal(8, 4)
+
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id])
+
+  @@unique([taskId, resourceId])
+}
+
+model TaskBudgetAllocation {
+  id           String  @id @default(uuid())
+  taskId       String
+  budgetItemId String
+  percentage   Decimal @db.Decimal(6, 4)
+
+  task       Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  budgetItem BudgetItem @relation(fields: [budgetItemId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, budgetItemId])
+}
+
+model Milestone {
+  id        String   @id @default(uuid())
+  projectId String
+  code      String
+  name      String
+  plannedDate DateTime
+  actualDate  DateTime?
+  isContractual Boolean @default(false)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ScheduleBaseline {
+  id        String   @id @default(uuid())
+  projectId String
+  version   Int
+  label     String
+  frozenAt  DateTime @default(now())
+  snapshot  Json
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, version])
+}
+
+model Holiday {
+  date  DateTime @id @db.Date
+  name  String
+  emiliani Boolean @default(false)
+}
+
+// ============================================================
+// FLUJO DE CAJA: devengo, caja, crédito constructor, aportes
+// ============================================================
+
+enum CashFlowKind {
+  INGRESO
+  EGRESO
+}
+
+enum CashFlowCategory {
+  VENTA_CUOTA_INICIAL
+  VENTA_SALDO
+  DESEMBOLSO_CREDITO
+  APORTE_SOCIO
+  EGRESO_CAPITULO
+  INTERES_CREDITO
+  AMORTIZACION_CREDITO
+  IMPUESTOS
+  OTRO
+}
+
+model CashFlowAccount {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  bank      String?
+  minBalance Decimal @default(0) @db.Decimal(18, 2)
+  createdAt DateTime @default(now())
+
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  transactions CashTransaction[]
+}
+
+model CashFlowEntry {
+  id              String           @id @default(uuid())
+  projectId       String
+  date            DateTime         @db.Date
+  kind            CashFlowKind
+  category        CashFlowCategory
+  description     String
+  amount          Decimal          @db.Decimal(18, 2)
+  chapterId       String?
+  budgetItemId    String?
+  saleId          String?
+  loanFacilityId  String?
+  createdAt       DateTime         @default(now())
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter      Chapter?      @relation(fields: [chapterId], references: [id])
+  budgetItem   BudgetItem?   @relation(fields: [budgetItemId], references: [id])
+  sale         Sale?         @relation(fields: [saleId], references: [id])
+  loanFacility LoanFacility? @relation(fields: [loanFacilityId], references: [id])
+
+  @@index([projectId, date])
+}
+
+model CashTransaction {
+  id               String       @id @default(uuid())
+  projectId        String
+  accountId        String
+  date             DateTime     @db.Date
+  kind             CashFlowKind
+  description      String
+  amount           Decimal      @db.Decimal(18, 2)
+  reconciliationId String?
+  createdAt        DateTime     @default(now())
+
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  account CashFlowAccount @relation(fields: [accountId], references: [id])
+
+  @@index([projectId, date])
+  @@index([reconciliationId])
+}
+
+model LoanFacility {
+  id                  String   @id @default(uuid())
+  projectId           String
+  bank                String
+  amount              Decimal  @db.Decimal(18, 2)
+  interestRateAnnual  Decimal  @db.Decimal(8, 6)
+  startDate           DateTime @db.Date
+  termMonths          Int
+  graceMonths         Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  disbursements LoanDisbursement[]
+  payments      LoanPayment[]
+  cashEntries   CashFlowEntry[]
+}
+
+model LoanDisbursement {
+  id             String   @id @default(uuid())
+  loanFacilityId String
+  date           DateTime @db.Date
+  amount         Decimal  @db.Decimal(18, 2)
+  description    String?
+
+  loanFacility LoanFacility @relation(fields: [loanFacilityId], references: [id], onDelete: Cascade)
+}
+
+model LoanPayment {
+  id             String   @id @default(uuid())
+  loanFacilityId String
+  date           DateTime @db.Date
+  principalAmount Decimal @db.Decimal(18, 2)
+  interestAmount  Decimal @db.Decimal(18, 2)
+
+  loanFacility LoanFacility @relation(fields: [loanFacilityId], references: [id], onDelete: Cascade)
+}
+
+model PartnerContribution {
+  id          String   @id @default(uuid())
+  projectId   String
+  partnerName String
+  date        DateTime @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+  description String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// VENTAS: torres, unidades, ventas, planes de pago
+// ============================================================
+
+enum UnitKind {
+  APARTAMENTO
+  CASA
+  LOCAL
+  PARQUEADERO
+  DEPOSITO
+}
+
+enum UnitStatus {
+  DISPONIBLE
+  RESERVADA
+  NEGOCIANDO
+  VENDIDA
+  ESCRITURADA
+  BLOQUEADA
+}
+
+model Tower {
+  id        String   @id @default(uuid())
+  projectId String
+  code      String
+  name      String
+  floors    Int?
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  units   Unit[]
+
+  @@unique([projectId, code])
+}
+
+model Unit {
+  id             String     @id @default(uuid())
+  projectId      String
+  towerId        String?
+  code           String
+  kind           UnitKind
+  floor          Int?
+  privateAreaM2  Decimal    @db.Decimal(12, 4)
+  commonAreaM2   Decimal    @default(0) @db.Decimal(12, 4)
+  saleableAreaM2 Decimal    @db.Decimal(12, 4)
+  listPrice      Decimal    @db.Decimal(18, 2)
+  status         UnitStatus @default(DISPONIBLE)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tower   Tower?  @relation(fields: [towerId], references: [id])
+  sales   Sale[]
+
+  @@unique([projectId, code])
+  @@index([projectId, status])
+}
+
+model Sale {
+  id                    String   @id @default(uuid())
+  unitId                String
+  buyerName             String
+  buyerDocument         String
+  salePrice             Decimal  @db.Decimal(18, 2)
+  reservationDate       DateTime @db.Date
+  expectedScriptureDate DateTime? @db.Date
+  actualScriptureDate   DateTime? @db.Date
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+
+  unit             Unit                   @relation(fields: [unitId], references: [id])
+  paymentSchedule  PaymentScheduleItem[]
+  cashEntries      CashFlowEntry[]
+
+  @@index([unitId])
+}
+
+model PaymentScheduleItem {
+  id                String   @id @default(uuid())
+  saleId            String
+  installmentNumber Int
+  dueDate           DateTime @db.Date
+  amount            Decimal  @db.Decimal(18, 2)
+  description       String?
+  isPaid            Boolean  @default(false)
+  paidAt            DateTime?
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@unique([saleId, installmentNumber])
+}
+
+// ============================================================
+// ÓRDENES DE CAMBIO + workflow aprobación
+// ============================================================
+
+enum ChangeOrderStatus {
+  BORRADOR
+  EN_REVISION
+  APROBADA
+  RECHAZADA
+  APLICADA
+}
+
+enum ApprovalDecision {
+  APROBADO
+  RECHAZADO
+}
+
+model ChangeOrder {
+  id                          String            @id @default(uuid())
+  projectId                   String
+  code                        String
+  title                       String
+  justification               String
+  estimatedCostImpact         Decimal           @db.Decimal(18, 2)
+  estimatedScheduleImpactDays Int               @default(0)
+  status                      ChangeOrderStatus @default(BORRADOR)
+  createdById                 String
+  appliedAt                   DateTime?
+  createdAt                   DateTime          @default(now())
+  updatedAt                   DateTime          @updatedAt
+
+  project   Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User                @relation("ChangeOrderCreator", fields: [createdById], references: [id])
+  impacts   ChangeOrderImpact[]
+  approvals Approval[]
+
+  @@unique([projectId, code])
+}
+
+model ChangeOrderImpact {
+  id            String  @id @default(uuid())
+  changeOrderId String
+  budgetItemId  String?
+  chapterId     String?
+  newQuantity   Decimal? @db.Decimal(18, 4)
+  newUnitCost   Decimal? @db.Decimal(18, 4)
+  notes         String?
+
+  changeOrder ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
+  budgetItem  BudgetItem? @relation(fields: [budgetItemId], references: [id])
+  chapter     Chapter?    @relation(fields: [chapterId], references: [id])
+}
+
+model Approval {
+  id            String           @id @default(uuid())
+  changeOrderId String
+  approverId    String
+  decision      ApprovalDecision
+  comments      String?
+  decidedAt     DateTime         @default(now())
+
+  changeOrder ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
+  approver    User        @relation(fields: [approverId], references: [id])
+}
+
+// ============================================================
+// REPORTES, ARCHIVOS, IMPORTACIÓN
+// ============================================================
+
+enum ReportKind {
+  PREFACTIBILIDAD
+  EJECUCION_PRESUPUESTAL
+  FLUJO_CAJA
+  ACTA_COMITE
+  RENTABILIDAD
+  SECOP_II
+  PERSONALIZADO
+}
+
+model ReportTemplate {
+  id         String     @id @default(uuid())
+  kind       ReportKind
+  name       String
+  htmlSource String
+  cssSource  String?
+  isDefault  Boolean    @default(false)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  generatedReports GeneratedReport[]
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+model GeneratedReport {
+  id          String     @id @default(uuid())
+  projectId   String
+  templateId  String
+  kind        ReportKind
+  status      JobStatus  @default(PENDING)
+  parameters  Json
+  fileAssetId String?
+  errorMessage String?
+  createdById String
+  createdAt   DateTime   @default(now())
+  completedAt DateTime?
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  template  ReportTemplate @relation(fields: [templateId], references: [id])
+  createdBy User           @relation(fields: [createdById], references: [id])
+  fileAsset FileAsset?     @relation(fields: [fileAssetId], references: [id])
+}
+
+model FileAsset {
+  id          String   @id @default(uuid())
+  name        String
+  mimeType    String
+  sizeBytes   Int
+  storageKey  String   @unique
+  createdAt   DateTime @default(now())
+
+  generatedReports GeneratedReport[]
+  importJobs       ImportJob[]
+}
+
+enum ImportKind {
+  XLSX_SANTA_ISABEL
+  XLSX_GENERIC
+}
+
+model ImportJob {
+  id           String     @id @default(uuid())
+  projectId    String?
+  kind         ImportKind
+  status       JobStatus  @default(PENDING)
+  fileAssetId  String
+  mappingJson  Json?
+  previewJson  Json?
+  resultJson   Json?
+  errorMessage String?
+  createdById  String
+  createdAt    DateTime   @default(now())
+  completedAt  DateTime?
+
+  project   Project?  @relation(fields: [projectId], references: [id])
+  fileAsset FileAsset @relation(fields: [fileAssetId], references: [id])
+  createdBy User      @relation(fields: [createdById], references: [id])
+}

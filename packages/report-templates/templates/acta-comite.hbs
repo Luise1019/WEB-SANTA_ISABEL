@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Acta de Comité — {{project.name}}</title>
+  <link rel="stylesheet" href="./common.css" />
+</head>
+<body>
+  <header class="brand">
+    {{#if branding.logoUrl}}<img src="{{branding.logoUrl}}" class="logo" />{{/if}}
+    <h1>Acta de Comité</h1>
+    <h2>{{project.name}}</h2>
+    <p class="meta">{{meetingDate}}</p>
+  </header>
+
+  <section>
+    <h3>Asistentes</h3>
+    <p>Plantilla M10 — placeholder.</p>
+  </section>
+
+  <section>
+    <h3>Decisiones</h3>
+    <p>Plantilla M10 — placeholder.</p>
+  </section>
+
+  <footer>
+    <small>Generado el {{generatedAt}} · {{branding.companyName}}</small>
+  </footer>
+</body>
+</html>

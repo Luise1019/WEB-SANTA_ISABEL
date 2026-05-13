@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Prefactibilidad — {{project.name}}</title>
+  <link rel="stylesheet" href="./common.css" />
+</head>
+<body>
+  <header class="brand">
+    {{#if branding.logoUrl}}<img src="{{branding.logoUrl}}" class="logo" />{{/if}}
+    <h1>Prefactibilidad — {{project.name}}</h1>
+    <p class="meta">{{project.city}}, {{project.department}} · {{project.housingType}}</p>
+  </header>
+
+  <section>
+    <h2>Resumen ejecutivo</h2>
+    <p>Plantilla M10 — placeholder. Aquí van KPIs principales, tiraje, áreas y costo/m².</p>
+  </section>
+
+  <footer>
+    <small>Generado el {{generatedAt}} · {{branding.companyName}}</small>
+  </footer>
+</body>
+</html>

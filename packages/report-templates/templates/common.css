@@ -1,0 +1,61 @@
+@page {
+  size: Letter;
+  margin: 2cm 2cm 2.5cm 2cm;
+  @bottom-center {
+    content: counter(page) ' / ' counter(pages);
+    font-family: 'DejaVu Sans', sans-serif;
+    font-size: 9pt;
+    color: #888;
+  }
+}
+
+body {
+  font-family: 'DejaVu Sans', 'Liberation Sans', sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  color: #1f2937;
+}
+
+.brand {
+  border-bottom: 2px solid #1e3a8a;
+  padding-bottom: 12px;
+  margin-bottom: 18px;
+}
+
+.brand .logo {
+  max-height: 48px;
+  margin-bottom: 8px;
+}
+
+.brand h1 { margin: 0; color: #1e3a8a; font-size: 18pt; }
+.brand h2 { margin: 4px 0 0; font-weight: 500; font-size: 13pt; color: #475569; }
+.brand .meta { margin: 4px 0 0; color: #6b7280; font-size: 9pt; }
+
+h3 { color: #1e3a8a; font-size: 12pt; margin-top: 18px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 9.5pt;
+}
+
+th, td {
+  border: 1px solid #e5e7eb;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+th { background: #f1f5f9; }
+
+.right { text-align: right; }
+.muted { color: #6b7280; }
+
+footer {
+  position: fixed;
+  bottom: 1cm;
+  width: 100%;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 8.5pt;
+}

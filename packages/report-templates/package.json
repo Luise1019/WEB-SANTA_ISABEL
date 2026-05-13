@@ -1,0 +1,12 @@
+{
+  "name": "@santaisabel/report-templates",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./index.js",
+  "scripts": {
+    "build": "echo 'templates are static assets'",
+    "lint": "echo 'no lint'",
+    "typecheck": "echo 'no typecheck'",
+    "clean": "echo 'nothing to clean'"
+  }
+}

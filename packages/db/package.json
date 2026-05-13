@@ -1,0 +1,50 @@
+{
+  "name": "@santaisabel/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
+  },
+  "scripts": {
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:reset": "prisma migrate reset --force",
+    "seed": "tsx src/seed.ts",
+    "studio": "prisma studio",
+    "format": "prisma format",
+    "clean": "rimraf dist .turbo node_modules/.prisma"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "decimal.js": "^10.4.3"
+  },
+  "devDependencies": {
+    "@santaisabel/config": "workspace:*",
+    "@santaisabel/shared": "workspace:*",
+    "@types/node": "^20.14.0",
+    "argon2": "^0.41.1",
+    "eslint": "^8.57.0",
+    "prisma": "^5.20.0",
+    "rimraf": "^6.0.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4"
+  }
+}
