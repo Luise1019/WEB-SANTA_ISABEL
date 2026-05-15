@@ -325,6 +325,10 @@ export const api = {
   listBaselines: (projectId: string) =>
     request<Array<Record<string, unknown>>>(`/projects/${projectId}/changes/baselines`),
 
+  // Dashboard
+  getDashboardSummary: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/dashboard/summary`),
+
   // Resources & APUs (global)
   listResources: () => request<Array<Record<string, unknown>>>('/budget/resources'),
   createResource: (input: ResourceInput) =>

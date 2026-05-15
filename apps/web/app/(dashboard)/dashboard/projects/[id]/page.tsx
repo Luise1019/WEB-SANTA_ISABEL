@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Calendar, DollarSign, FileText, TrendingUp, Users } from 'lucide-react';
 import Link from 'next/link';
-import { use } from 'react';
+import React, { use } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +40,14 @@ type Project = {
   description?: string;
 };
 
-const modules = [
+const modules: Array<{
+  href: string;
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  color: string;
+  disabled?: boolean;
+}> = [
   {
     href: 'budget',
     icon: DollarSign,
@@ -82,7 +89,6 @@ const modules = [
     title: 'Dashboard',
     description: 'KPIs, curva S y alertas',
     color: 'text-indigo-600',
-    disabled: true,
   },
 ];
 
