@@ -4,7 +4,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { use, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,12 +46,226 @@ type Task = {
   } | null;
 };
 
+type BudgetSummary = {
+  directCost: string;
+  totalCost: string;
+};
+
 const KIND_LABELS: Record<string, string> = {
   SUMMARY: 'Resumen',
   TASK: 'Tarea',
   MILESTONE: 'Hito',
 };
 
+// ─── EV Panel ────────────────────────────────────────────────
+function EVPanel({ tasks, summary }: { tasks: Task[]; summary: BudgetSummary | undefined }) {
+  const totalBudget = Number(summary?.directCost ?? '0');
+
+  const progressTasks = tasks.filter((t) => t.kind !== 'SUMMARY');
+  const avgProgress =
+    progressTasks.length > 0
+      ? progressTasks.reduce((s, t) => s + Number(t.progress), 0) / progressTasks.length
+      : 0;
+
+  const BCWP = totalBudget * avgProgress;
+
+  const now = Date.now();
+  const starts = tasks
+    .map((t) => new Date(t.plannedStart).getTime())
+    .filter((v) => !isNaN(v));
+  const ends = tasks
+    .map((t) => new Date(t.plannedEnd).getTime())
+    .filter((v) => !isNaN(v));
+  const projectStart = starts.length > 0 ? Math.min(...starts) : now;
+  const projectEnd = ends.length > 0 ? Math.max(...ends) : now;
+  const totalDuration = projectEnd - projectStart;
+  const elapsed = Math.max(0, Math.min(now - projectStart, totalDuration));
+  const timeProgress = totalDuration > 0 ? elapsed / totalDuration : 0;
+  const BCWS = totalBudget * timeProgress;
+
+  const CPI = BCWS > 0 ? BCWP / BCWS : null;
+  const SPI = BCWS > 0 ? BCWP / BCWS : null;
+  const EAC = CPI && CPI > 0 ? totalBudget / CPI : totalBudget;
+
+  const noData = tasks.length === 0 || totalBudget === 0;
+
+  // S-Curve data
+  const sCurveData = useMemo(() => {
+    if (tasks.length === 0 || totalBudget === 0 || totalDuration <= 0) return [];
+    const months: Array<{ month: string; Planificado: number; Ejecutado: number }> = [];
+    const current = new Date(
+      new Date(projectStart).getFullYear(),
+      new Date(projectStart).getMonth(),
+      1,
+    );
+    const endDate = new Date(projectEnd);
+    while (current <= endDate) {
+      const monthEnd = new Date(
+        current.getFullYear(),
+        current.getMonth() + 1,
+        0,
+      ).getTime();
+      const planPct = Math.min(100, Math.round(
+        (Math.min(monthEnd, projectEnd) - projectStart) / totalDuration * 100,
+      ));
+      const execPct = Math.min(planPct, Math.round(avgProgress * 100));
+      months.push({
+        month: current.toLocaleDateString('es-CO', { month: 'short', year: '2-digit' }),
+        Planificado: planPct,
+        Ejecutado: execPct,
+      });
+      current.setMonth(current.getMonth() + 1);
+    }
+    return months;
+  }, [tasks, totalBudget, totalDuration, projectStart, projectEnd, avgProgress]);
+
+  if (noData) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Valor Ganado (Earned Value)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Sin datos suficientes. Agrega tareas y configura el presupuesto para ver el análisis EV.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const kpis = [
+    {
+      label: 'Avance físico',
+      value: `${(avgProgress * 100).toFixed(1)}%`,
+      color: avgProgress >= timeProgress ? 'text-green-700' : 'text-red-700',
+      subtitle: 'Progreso real',
+    },
+    {
+      label: 'Avance tiempo',
+      value: `${(timeProgress * 100).toFixed(1)}%`,
+      color: 'text-blue-700',
+      subtitle: 'Tiempo transcurrido',
+    },
+    {
+      label: 'CPI',
+      value: CPI != null ? CPI.toFixed(2) : '—',
+      color: CPI != null && CPI >= 1 ? 'text-green-700' : 'text-red-700',
+      subtitle: 'Índice costo',
+    },
+    {
+      label: 'SPI',
+      value: SPI != null ? SPI.toFixed(2) : '—',
+      color: SPI != null && SPI >= 1 ? 'text-green-700' : 'text-red-700',
+      subtitle: 'Índice cronograma',
+    },
+  ];
+
+  // Progress bars
+  const bcwpPct = totalBudget > 0 ? Math.min(100, (BCWP / totalBudget) * 100) : 0;
+  const bcwsPct = totalBudget > 0 ? Math.min(100, (BCWS / totalBudget) * 100) : 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle className="text-base">Valor Ganado (Earned Value)</CardTitle>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            BCWP vs BCWS — presupuesto base: costo directo del presupuesto
+          </p>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* KPI grid */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {kpis.map((k) => (
+            <div key={k.label} className="rounded-lg border p-3 bg-muted/20">
+              <p className="text-xs text-muted-foreground">{k.label}</p>
+              <p className={`mt-1 text-2xl font-bold ${k.color}`}>{k.value}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{k.subtitle}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bars */}
+        <div className="space-y-3">
+          <div>
+            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+              <span>BCWP (Trabajo ejecutado)</span>
+              <span>{bcwpPct.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-green-500 transition-all"
+                style={{ width: `${bcwpPct}%` }}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="flex justify-between text-xs text-muted-foreground mb-1">
+              <span>BCWS (Trabajo planificado)</span>
+              <span>{bcwsPct.toFixed(1)}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all"
+                style={{ width: `${bcwsPct}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground pt-1">
+            <span>EAC estimado:</span>
+            <span className={`font-medium ${EAC > totalBudget ? 'text-red-600' : 'text-green-700'}`}>
+              {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(EAC)}
+            </span>
+          </div>
+        </div>
+
+        {/* S-Curve mini chart */}
+        {sCurveData.length > 1 && (
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">Curva S — % acumulado del presupuesto</p>
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={sCurveData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} />
+                <YAxis
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={36}
+                />
+                <Tooltip
+                  formatter={(value) => [`${Number(value ?? 0)}%`]}
+                  contentStyle={{ fontSize: 11 }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line
+                  type="monotone"
+                  dataKey="Planificado"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="Ejecutado"
+                  stroke="#16a34a"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────
 export default function SchedulePage({ params }: { params: { id: string } }) {
   const { id: projectId } = params;
   const qc = useQueryClient();
@@ -53,7 +277,15 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
     queryFn: () => api.listTasks(projectId),
   });
 
+  const { data: budgetSummaryData } = useQuery({
+    queryKey: ['budget-summary', projectId],
+    queryFn: () => api.getBudgetSummary(projectId),
+    // Don't block the page if this fails
+    retry: 1,
+  });
+
   const tasks = (data ?? []) as unknown as Task[];
+  const budgetSummary = budgetSummaryData as unknown as BudgetSummary | undefined;
 
   const cpmMutation = useMutation({
     mutationFn: () => api.computeCPM(projectId),
@@ -74,7 +306,6 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
   const stats = useMemo(() => {
     const total = tasks.length;
     const critical = tasks.filter((t) => t.isCritical).length;
-    // progress stored as fraction 0.0–1.0 in DB
     const done = tasks.filter((t) => Number(t.progress) >= 1).length;
     const avgProgress =
       total > 0
@@ -135,6 +366,11 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
           </Card>
         ))}
       </div>
+
+      {/* Earned Value Panel */}
+      {tasks.length > 0 && (
+        <EVPanel tasks={tasks} summary={budgetSummary} />
+      )}
 
       {/* Content */}
       {isLoading && <p className="text-sm">Cargando cronograma…</p>}
@@ -214,7 +450,6 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
                           onBlur={(e) =>
                             progressMutation.mutate({
                               taskId: t.id,
-                              // store as fraction
                               progress: Number(e.target.value) / 100,
                             })
                           }
@@ -226,7 +461,7 @@ export default function SchedulePage({ params }: { params: { id: string } }) {
                       <td className="py-2">
                         {t.isCritical ? (
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                            Sí
+                            Si
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">No</span>
