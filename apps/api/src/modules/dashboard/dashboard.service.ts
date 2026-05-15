@@ -78,8 +78,9 @@ export class DashboardService {
 
     const totalTasks = tasks.length;
     const criticalTasks = tasks.filter((t) => t.isCritical).length;
+    // progress stored as fraction 0.0–1.0 in DB; convert to percentage
     const avgProgress = totalTasks > 0
-      ? Math.round(tasks.reduce((s, t) => s + Number(t.progress), 0) / totalTasks)
+      ? Math.round(tasks.reduce((s, t) => s + Number(t.progress) * 100, 0) / totalTasks)
       : 0;
 
     let totalIngresos = new Decimal(0);

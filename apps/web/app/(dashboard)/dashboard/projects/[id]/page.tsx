@@ -1,28 +1,39 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3, Calendar, DollarSign, FileText, TrendingUp, Users } from 'lucide-react';
+import {
+  ArrowLeft,
+  BarChart3,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  DollarSign,
+  FileText,
+  MapPin,
+  TrendingUp,
+  Users,
+} from 'lucide-react';
 import Link from 'next/link';
 import React, { use } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { api } from '@/lib/api-client';
 
-const STATUS_LABELS: Record<string, string> = {
-  PREFACTIBILIDAD: 'Prefactibilidad',
-  FACTIBILIDAD: 'Factibilidad',
-  EJECUCION: 'Ejecución',
-  CIERRE: 'Cierre',
-  ARCHIVADO: 'Archivado',
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  PREFACTIBILIDAD: { label: 'Prefactibilidad', color: 'bg-slate-100 text-slate-700' },
+  FACTIBILIDAD: { label: 'Factibilidad', color: 'bg-blue-100 text-blue-700' },
+  EJECUCION: { label: 'En ejecución', color: 'bg-green-100 text-green-700' },
+  CIERRE: { label: 'Cierre', color: 'bg-amber-100 text-amber-700' },
+  ARCHIVADO: { label: 'Archivado', color: 'bg-gray-100 text-gray-500' },
 };
 
-const HOUSING_LABELS: Record<string, string> = {
-  VIS: 'VIS',
-  VIP: 'VIP',
-  NO_VIS: 'NO VIS',
-  COMERCIAL: 'Comercial',
-  MIXTO: 'Mixto',
+const HOUSING_CONFIG: Record<string, { label: string; color: string }> = {
+  VIS: { label: 'VIS', color: 'bg-emerald-100 text-emerald-700' },
+  VIP: { label: 'VIP', color: 'bg-teal-100 text-teal-700' },
+  NO_VIS: { label: 'NO VIS', color: 'bg-purple-100 text-purple-700' },
+  COMERCIAL: { label: 'Comercial', color: 'bg-orange-100 text-orange-700' },
+  MIXTO: { label: 'Mixto', color: 'bg-pink-100 text-pink-700' },
 };
 
 type Project = {
@@ -46,49 +57,56 @@ const modules: Array<{
   title: string;
   description: string;
   color: string;
+  bgColor: string;
   disabled?: boolean;
 }> = [
   {
     href: 'budget',
     icon: DollarSign,
     title: 'Presupuesto',
-    description: 'Capítulos, APU, ítems y AIU',
-    color: 'text-green-600',
+    description: 'Capítulos, ítems, APU y AIU',
+    color: 'text-green-700',
+    bgColor: 'bg-green-50 border-green-200',
   },
   {
     href: 'schedule',
     icon: Calendar,
     title: 'Cronograma',
-    description: 'Gantt, WBS y ruta crítica',
-    color: 'text-blue-600',
+    description: 'Gantt, WBS y ruta crítica CPM',
+    color: 'text-blue-700',
+    bgColor: 'bg-blue-50 border-blue-200',
   },
   {
     href: 'cashflow',
     icon: TrendingUp,
     title: 'Flujo de caja',
-    description: 'Devengo, caja y crédito',
-    color: 'text-orange-600',
+    description: 'Ingresos, egresos y préstamos',
+    color: 'text-orange-700',
+    bgColor: 'bg-orange-50 border-orange-200',
   },
   {
     href: 'sales',
     icon: Users,
     title: 'Ventas',
     description: 'Unidades, precios y reservas',
-    color: 'text-purple-600',
+    color: 'text-purple-700',
+    bgColor: 'bg-purple-50 border-purple-200',
   },
   {
     href: 'changes',
     icon: FileText,
     title: 'Cambios',
     description: 'Órdenes de cambio y aprobaciones',
-    color: 'text-red-600',
+    color: 'text-red-700',
+    bgColor: 'bg-red-50 border-red-200',
   },
   {
     href: 'dashboard',
     icon: BarChart3,
     title: 'Dashboard',
-    description: 'KPIs, curva S y alertas',
-    color: 'text-indigo-600',
+    description: 'KPIs ejecutivos, curva S y alertas',
+    color: 'text-indigo-700',
+    bgColor: 'bg-indigo-50 border-indigo-200',
   },
 ];
 
@@ -101,70 +119,101 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   });
 
   const project = data as unknown as Project | undefined;
+  const statusCfg = project ? (STATUS_CONFIG[project.status] ?? { label: project.status, color: 'bg-gray-100 text-gray-700' }) : null;
+  const housingCfg = project ? (HOUSING_CONFIG[project.housingType] ?? { label: project.housingType, color: 'bg-gray-100 text-gray-700' }) : null;
+
+  const formatDate = (d?: string) =>
+    d ? new Date(d).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          {isLoading && <p className="text-sm">Cargando…</p>}
+      {/* Header */}
+      <div className="flex items-start gap-4">
+        <Button variant="outline" size="sm" asChild className="shrink-0 mt-1">
+          <Link href="/dashboard/projects">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Proyectos
+          </Link>
+        </Button>
+
+        <div className="flex-1 min-w-0">
+          {isLoading && (
+            <div className="space-y-2">
+              <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+              <div className="h-8 w-64 animate-pulse rounded bg-muted" />
+            </div>
+          )}
           {project && (
             <>
-              <p className="font-mono text-xs text-muted-foreground">{project.code}</p>
-              <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-              <div className="mt-1 flex flex-wrap gap-3 text-sm text-muted-foreground">
-                <span>
-                  {HOUSING_LABELS[project.housingType] ?? project.housingType}
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="font-mono text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                  {project.code}
                 </span>
-                <span>·</span>
-                <span>{STATUS_LABELS[project.status] ?? project.status}</span>
-                <span>·</span>
-                <span>
+                {housingCfg && (
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${housingCfg.color}`}>
+                    {housingCfg.label}
+                  </span>
+                )}
+                {statusCfg && (
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusCfg.color}`}>
+                    {statusCfg.label}
+                  </span>
+                )}
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
+              <div className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" />
                   {project.city}, {project.department}
                 </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5" />
+                  {formatDate(project.startDate)} → {formatDate(project.expectedEndDate)}
+                </span>
+                {project.saleableAreaM2 && (
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {Number(project.saleableAreaM2).toLocaleString('es-CO')} m² vendibles
+                  </span>
+                )}
               </div>
               {project.description && (
-                <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{project.description}</p>
+                <p className="mt-2 text-sm text-muted-foreground max-w-2xl">{project.description}</p>
               )}
             </>
           )}
           {error && <p className="text-sm text-destructive">Error al cargar el proyecto.</p>}
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/dashboard/projects">← Proyectos</Link>
-        </Button>
-      </header>
+      </div>
 
-      {/* Module Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {modules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <Card
-              key={mod.href}
-              className={`transition-shadow ${mod.disabled ? 'opacity-50' : 'hover:shadow-md'}`}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Icon className={`h-5 w-5 ${mod.color}`} />
-                  {mod.title}
-                  {mod.disabled && (
-                    <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground">
-                      Próximamente
-                    </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="mb-3 text-sm text-muted-foreground">{mod.description}</p>
-                {!mod.disabled && (
-                  <Button size="sm" asChild>
-                    <Link href={`/dashboard/projects/${id}/${mod.href}`}>Abrir</Link>
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+      {/* Module grid */}
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+          Módulos del proyecto
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {modules.map((mod) => {
+            const Icon = mod.icon;
+            return (
+              <Link
+                key={mod.href}
+                href={`/dashboard/projects/${id}/${mod.href}`}
+                className={`group block rounded-xl border-2 p-5 transition-all hover:shadow-md hover:-translate-y-0.5 ${mod.bgColor}`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className={`rounded-lg p-2.5 bg-white shadow-sm ${mod.color}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`font-semibold ${mod.color}`}>{mod.title}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{mod.description}</p>
+                  </div>
+                  <ArrowLeft className={`h-4 w-4 rotate-180 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5 ${mod.color}`} />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

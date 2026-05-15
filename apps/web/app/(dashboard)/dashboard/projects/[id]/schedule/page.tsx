@@ -74,10 +74,11 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
   const stats = useMemo(() => {
     const total = tasks.length;
     const critical = tasks.filter((t) => t.isCritical).length;
-    const done = tasks.filter((t) => Number(t.progress) >= 100).length;
+    // progress stored as fraction 0.0–1.0 in DB
+    const done = tasks.filter((t) => Number(t.progress) >= 1).length;
     const avgProgress =
       total > 0
-        ? Math.round(tasks.reduce((s, t) => s + Number(t.progress), 0) / total)
+        ? Math.round(tasks.reduce((s, t) => s + Number(t.progress) * 100, 0) / total)
         : 0;
     return { total, critical, done, avgProgress };
   }, [tasks]);
@@ -209,11 +210,12 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                           min={0}
                           max={100}
                           className="w-16 rounded border px-1 text-right text-xs"
-                          defaultValue={Math.round(Number(t.progress))}
+                          defaultValue={Math.round(Number(t.progress) * 100)}
                           onBlur={(e) =>
                             progressMutation.mutate({
                               taskId: t.id,
-                              progress: Number(e.target.value),
+                              // store as fraction
+                              progress: Number(e.target.value) / 100,
                             })
                           }
                         />
