@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Project } from '@prisma/client';
-import { STANDARD_CHAPTERS, type ProjectInput } from '@santaisabel/shared';
+import { STANDARD_CHAPTERS, type ProjectInput, type ProjectUpdate } from '@santaisabel/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -53,5 +53,32 @@ export class ProjectsService {
 
       return project;
     });
+  }
+
+  async update(id: string, input: ProjectUpdate): Promise<Project> {
+    await this.findById(id);
+    return this.prisma.project.update({
+      where: { id },
+      data: {
+        ...(input.code !== undefined ? { code: input.code } : {}),
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.housingType !== undefined ? { housingType: input.housingType } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.city !== undefined ? { city: input.city } : {}),
+        ...(input.department !== undefined ? { department: input.department } : {}),
+        ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+        ...(input.expectedEndDate !== undefined ? { expectedEndDate: input.expectedEndDate } : {}),
+        ...(input.totalAreaM2 !== undefined ? { totalAreaM2: input.totalAreaM2?.toString() ?? null } : {}),
+        ...(input.saleableAreaM2 !== undefined
+          ? { saleableAreaM2: input.saleableAreaM2?.toString() ?? null }
+          : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+      },
+    });
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.findById(id);
+    await this.prisma.project.delete({ where: { id } });
   }
 }

@@ -3,19 +3,26 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+
 import { LoginInputSchema, type LoginInput } from '@santaisabel/shared';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 
 export default function LoginPage() {
   const router = useRouter();
   const setTokens = useAuth((s) => s.setTokens);
+  const accessToken = useAuth((s) => s.accessToken);
+
+  useEffect(() => {
+    if (accessToken) router.replace('/dashboard');
+  }, [accessToken, router]);
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(LoginInputSchema),
@@ -25,10 +32,18 @@ export default function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: api.login,
     onSuccess: (tokens) => {
-      setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
-      router.push('/dashboard');
+      setTokens(tokens);
+      router.replace('/dashboard');
     },
   });
+
+  const error = loginMutation.error as ApiError | null;
+  const errorMessage =
+    error?.status === 401
+      ? 'Credenciales inválidas.'
+      : error
+        ? `No se pudo iniciar sesión (${error.message}).`
+        : null;
 
   return (
     <main className="container flex min-h-screen items-center justify-center py-12">
@@ -61,11 +76,7 @@ export default function LoginPage() {
                 <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
               )}
             </div>
-            {loginMutation.isError && (
-              <p className="text-sm text-destructive">
-                No se pudo iniciar sesión. Verifica tus credenciales.
-              </p>
-            )}
+            {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
             <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
               {loginMutation.isPending ? 'Entrando…' : 'Entrar'}
             </Button>

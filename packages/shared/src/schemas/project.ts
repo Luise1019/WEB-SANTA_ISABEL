@@ -28,3 +28,6 @@ export const ProjectInputSchema = z.object({
   description: z.string().max(2000).optional(),
 });
 export type ProjectInput = z.infer<typeof ProjectInputSchema>;
+
+export const ProjectUpdateSchema = ProjectInputSchema.partial();
+export type ProjectUpdate = z.infer<typeof ProjectUpdateSchema>;

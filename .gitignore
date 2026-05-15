@@ -55,3 +55,12 @@ tmp/
 
 # Sentry
 .sentryclirc
+
+# Claude Code / herramientas de IA
+.claude/
+
+# Archivos fuente de migración Excel (no son código)
+*.xlsx
+*.xlsm
+.~lock.*.xlsx#
+~$*

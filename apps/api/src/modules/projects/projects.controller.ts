@@ -1,8 +1,26 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { ProjectInputSchema, type ProjectInput } from '@santaisabel/shared';
 
+import {
+  ProjectInputSchema,
+  ProjectUpdateSchema,
+  type ProjectInput,
+  type ProjectUpdate,
+} from '@santaisabel/shared';
+
+import { Audit } from '../audit/audit.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 
@@ -25,7 +43,26 @@ export class ProjectsController {
 
   @Post()
   @Roles('GERENTE')
+  @Audit({ action: 'CREATE', entityType: 'Project' })
   create(@Body(new ZodValidationPipe(ProjectInputSchema)) dto: ProjectInput) {
     return this.projects.create(dto);
+  }
+
+  @Patch(':id')
+  @Roles('GERENTE')
+  @Audit({ action: 'UPDATE', entityType: 'Project', entityIdParam: 'id' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(ProjectUpdateSchema)) dto: ProjectUpdate,
+  ) {
+    return this.projects.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles('GERENTE')
+  @HttpCode(204)
+  @Audit({ action: 'DELETE', entityType: 'Project', entityIdParam: 'id' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.projects.remove(id);
   }
 }
