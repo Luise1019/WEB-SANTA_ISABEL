@@ -4,6 +4,11 @@ import type {
   ProjectInput,
   ProjectUpdate,
   RefreshTokenInput,
+  ResourceInput,
+  APUInput,
+  BudgetItemInput,
+  AIUConfigInput,
+  ChapterInput,
 } from '@santaisabel/shared';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
@@ -122,4 +127,52 @@ export const api = {
     }),
   deleteProject: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  // Budget
+  getBudgetSummary: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/summary`),
+  listChapters: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/budget/chapters`),
+  createSubchapter: (projectId: string, chapterId: string, input: ChapterInput) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/budget/chapters/${chapterId}/subchapters`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  listItems: (projectId: string, chapterId?: string) =>
+    request<Array<Record<string, unknown>>>(
+      `/projects/${projectId}/budget/items${chapterId ? `?chapterId=${chapterId}` : ''}`,
+    ),
+  createItem: (projectId: string, subchapterId: string, input: BudgetItemInput) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/budget/subchapters/${subchapterId}/items`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  updateItem: (projectId: string, itemId: string, input: Partial<BudgetItemInput>) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteItem: (projectId: string, itemId: string) =>
+    request<void>(`/projects/${projectId}/budget/items/${itemId}`, { method: 'DELETE' }),
+  getAIU: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/aiu`),
+  upsertAIU: (projectId: string, input: AIUConfigInput) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/aiu`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  // Resources & APUs (global)
+  listResources: () => request<Array<Record<string, unknown>>>('/budget/resources'),
+  createResource: (input: ResourceInput) =>
+    request<Record<string, unknown>>('/budget/resources', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listAPUs: () => request<Array<Record<string, unknown>>>('/budget/apus'),
+  createAPU: (input: APUInput) =>
+    request<Record<string, unknown>>('/budget/apus', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 };

@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@santaisabel/shared'],
   experimental: {
-    typedRoutes: true,
+    typedRoutes: false,
   },
 };
 

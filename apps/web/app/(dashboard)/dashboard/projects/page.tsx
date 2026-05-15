@@ -119,6 +119,11 @@ export default function ProjectsPage() {
                       <td className="py-2 pr-4">{formatDateCO(row.startDate)}</td>
                       <td className="py-2 pr-4">{formatDateCO(row.expectedEndDate)}</td>
                       <td className="py-2 pr-4 text-right">
+                        {pendingDeleteId !== row.id && (
+                          <Button variant="outline" size="sm" asChild className="mr-1">
+                            <Link href={`/dashboard/projects/${row.id}`}>Ver</Link>
+                          </Button>
+                        )}
                         {pendingDeleteId === row.id ? (
                           <span className="inline-flex gap-1">
                             <Button
