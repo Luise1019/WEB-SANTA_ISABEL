@@ -163,6 +163,8 @@ export class BudgetService {
         quantity: qty,
         unitCost: uc,
         totalCost: qty.times(uc),
+        costType: input.costType ?? 'MATERIAL',
+        customCategory: input.costType === 'OTRO' ? (input.customCategory ?? null) : null,
         order: count,
       },
       include: { apu: { include: { components: { include: { resource: true } } } } },
@@ -185,6 +187,10 @@ export class BudgetService {
         ...(input.quantity !== undefined ? { quantity: qty } : {}),
         ...(input.unitCost !== undefined ? { unitCost: uc } : {}),
         ...(input.apuId !== undefined ? { apuId: input.apuId } : {}),
+        ...(input.costType !== undefined ? { costType: input.costType } : {}),
+        ...(input.costType !== undefined
+          ? { customCategory: input.costType === 'OTRO' ? (input.customCategory ?? null) : null }
+          : {}),
         totalCost: qty.times(uc),
       },
     });
@@ -273,6 +279,8 @@ export class BudgetService {
             unitCostCalc: unitCostCalc.toFixed(2),
             totalCalc: total.toFixed(2),
             apuId: item.apuId,
+            costType: item.costType ?? 'MATERIAL',
+            customCategory: item.customCategory ?? null,
           };
         });
 
@@ -304,6 +312,24 @@ export class BudgetService {
     const ivaAmount = aiuObj.uti.div(100).times(directCost).times(aiuObj.iva.div(100));
     const totalCost = directCost.plus(aiuAmount).plus(ivaAmount);
 
+    // Cost breakdown by type (for other modules)
+    const costByType: Record<string, string> = {
+      MANO_OBRA: '0', MATERIAL: '0', EQUIPO: '0', FUNGIBLE: '0', OTRO: '0',
+    };
+    const customCategories: Record<string, string> = {};
+    for (const ch of chaptersWithTotals) {
+      for (const sub of ch.subchapters) {
+        for (const item of sub.items) {
+          const t = item.costType ?? 'MATERIAL';
+          costByType[t] = new Decimal(costByType[t] ?? '0').plus(new Decimal(item.totalCalc)).toFixed(2);
+          if (t === 'OTRO' && item.customCategory) {
+            customCategories[item.customCategory] = new Decimal(customCategories[item.customCategory] ?? '0')
+              .plus(new Decimal(item.totalCalc)).toFixed(2);
+          }
+        }
+      }
+    }
+
     return {
       chapters: chaptersWithTotals,
       directCost: directCost.toFixed(2),
@@ -311,6 +337,8 @@ export class BudgetService {
       ivaAmount: ivaAmount.toFixed(2),
       totalCost: totalCost.toFixed(2),
       aiuConfig: aiu,
+      costByType,
+      customCategories,
     };
   }
 }

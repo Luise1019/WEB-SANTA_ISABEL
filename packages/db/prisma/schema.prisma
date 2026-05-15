@@ -249,19 +249,29 @@ model APUComponent {
   @@index([apuId])
 }
 
+enum CostType {
+  MANO_OBRA
+  MATERIAL
+  EQUIPO
+  FUNGIBLE
+  OTRO
+}
+
 model BudgetItem {
-  id           String   @id @default(uuid())
-  subchapterId String
-  apuId        String?
-  code         String
-  description  String
-  unit         String
-  quantity     Decimal  @db.Decimal(18, 4)
-  unitCost     Decimal  @db.Decimal(18, 4)
-  totalCost    Decimal  @db.Decimal(18, 2)
-  order        Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String    @id @default(uuid())
+  subchapterId   String
+  apuId          String?
+  code           String
+  description    String
+  unit           String
+  quantity       Decimal   @db.Decimal(18, 4)
+  unitCost       Decimal   @db.Decimal(18, 4)
+  totalCost      Decimal   @db.Decimal(18, 2)
+  costType       CostType? @default(MATERIAL)
+  customCategory String?
+  order          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   subchapter      Subchapter             @relation(fields: [subchapterId], references: [id], onDelete: Cascade)
   apu             APU?                   @relation(fields: [apuId], references: [id])

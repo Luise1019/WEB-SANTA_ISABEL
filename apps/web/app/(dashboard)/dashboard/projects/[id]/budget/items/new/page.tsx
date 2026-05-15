@@ -32,6 +32,8 @@ export default function NewBudgetItemPage({ params }: { params: { id: string } }
   const [unit, setUnit] = useState('');
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
+  const [costType, setCostType] = useState<'MANO_OBRA'|'MATERIAL'|'EQUIPO'|'FUNGIBLE'|'OTRO'>('MATERIAL');
+  const [customCategory, setCustomCategory] = useState('');
 
   const { data: chaptersData } = useQuery({
     queryKey: ['chapters', projectId],
@@ -55,6 +57,8 @@ export default function NewBudgetItemPage({ params }: { params: { id: string } }
         quantity,
         unitCost,
         apuId: null,
+        costType,
+        customCategory: costType === 'OTRO' ? customCategory || null : null,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budget-summary', projectId] });
@@ -63,7 +67,9 @@ export default function NewBudgetItemPage({ params }: { params: { id: string } }
   });
 
   const canSubmit =
-    selectedSubchapter && code && description && unit && quantity && unitCost && !mutation.isPending;
+    selectedSubchapter && code && description && unit && quantity && unitCost &&
+    (costType !== 'OTRO' || customCategory.trim().length > 0) &&
+    !mutation.isPending;
 
   return (
     <div className="space-y-6">
@@ -161,6 +167,30 @@ export default function NewBudgetItemPage({ params }: { params: { id: string } }
                 placeholder="85000"
               />
             </div>
+          </div>
+
+          {/* Cost type */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Tipo de costo</Label>
+              <Select value={costType} onChange={(e) => setCostType(e.target.value as typeof costType)}>
+                <option value="MANO_OBRA">Mano de obra</option>
+                <option value="MATERIAL">Material</option>
+                <option value="EQUIPO">Equipo</option>
+                <option value="FUNGIBLE">Fungible</option>
+                <option value="OTRO">Otro</option>
+              </Select>
+            </div>
+            {costType === 'OTRO' && (
+              <div className="space-y-1">
+                <Label>Categoría personalizada</Label>
+                <Input
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder="Ej: Papelería, Seguros…"
+                />
+              </div>
+            )}
           </div>
 
           {/* Total preview */}

@@ -10,6 +10,9 @@ const numericString = () =>
 export const ResourceTypeSchema = z.enum(['MANO_OBRA', 'MATERIAL', 'EQUIPO', 'SUBCONTRATO']);
 export type ResourceType = z.infer<typeof ResourceTypeSchema>;
 
+export const CostTypeSchema = z.enum(['MANO_OBRA', 'MATERIAL', 'EQUIPO', 'FUNGIBLE', 'OTRO']);
+export type CostType = z.infer<typeof CostTypeSchema>;
+
 // ── Chapter / Subchapter ─────────────────────────────────────
 export const ChapterInputSchema = z.object({
   code: z.string().min(1).max(20),
@@ -53,6 +56,8 @@ export const BudgetItemInputSchema = z.object({
   unit: z.string().min(1).max(20),
   quantity: numericString(),
   unitCost: numericString(),
+  costType: CostTypeSchema.optional().default('MATERIAL'),
+  customCategory: z.string().max(100).optional().nullable(),
 });
 export type BudgetItemInput = z.infer<typeof BudgetItemInputSchema>;
 

@@ -13,6 +13,8 @@ import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api-client';
 
 // ─── Types ───────────────────────────────────────────────────
+type CostType = 'MANO_OBRA' | 'MATERIAL' | 'EQUIPO' | 'FUNGIBLE' | 'OTRO';
+
 type ItemData = {
   id: string;
   code: string;
@@ -21,6 +23,8 @@ type ItemData = {
   quantity: string;
   unitCostCalc: string;
   totalCalc: string;
+  costType: CostType;
+  customCategory: string | null;
 };
 
 type SubchapterData = {
@@ -51,9 +55,35 @@ type Summary = {
     utilidadPct: string;
     ivaUtilidadPct: string;
   };
+  costByType: Record<string, string>;
+  customCategories: Record<string, string>;
 };
 
 const UNITS = ['m2', 'm3', 'ml', 'kg', 'und', 'glb', 'hr'] as const;
+
+const COST_TYPES: { value: CostType; label: string }[] = [
+  { value: 'MANO_OBRA', label: 'Mano de obra' },
+  { value: 'MATERIAL', label: 'Material' },
+  { value: 'EQUIPO', label: 'Equipo' },
+  { value: 'FUNGIBLE', label: 'Fungible' },
+  { value: 'OTRO', label: 'Otro' },
+];
+
+const COST_TYPE_BADGE: Record<CostType, string> = {
+  MANO_OBRA: 'bg-blue-100 text-blue-700',
+  MATERIAL:  'bg-amber-100 text-amber-700',
+  EQUIPO:    'bg-purple-100 text-purple-700',
+  FUNGIBLE:  'bg-green-100 text-green-700',
+  OTRO:      'bg-gray-100 text-gray-600',
+};
+
+const COST_TYPE_DOT: Record<CostType, string> = {
+  MANO_OBRA: 'bg-blue-500',
+  MATERIAL:  'bg-amber-500',
+  EQUIPO:    'bg-purple-500',
+  FUNGIBLE:  'bg-green-500',
+  OTRO:      'bg-gray-400',
+};
 
 // ─── Helpers ─────────────────────────────────────────────────
 function formatCOP(value: string | number) {
@@ -62,6 +92,15 @@ function formatCOP(value: string | number) {
     currency: 'COP',
     maximumFractionDigits: 0,
   }).format(Number(value));
+}
+
+function CostTypeBadge({ type, custom }: { type: CostType; custom?: string | null }) {
+  const label = type === 'OTRO' && custom ? custom : (COST_TYPES.find(c => c.value === type)?.label ?? type);
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${COST_TYPE_BADGE[type] ?? 'bg-gray-100 text-gray-600'}`}>
+      {label}
+    </span>
+  );
 }
 
 // ─── AIU Panel ───────────────────────────────────────────────
@@ -161,7 +200,7 @@ function NewSubchapterForm({
 
   return (
     <tr>
-      <td colSpan={6} className="py-2 pl-6 pr-3">
+      <td colSpan={7} className="py-2 pl-6 pr-3">
         <div className="flex items-center gap-2">
           <Input
             autoFocus
@@ -206,6 +245,8 @@ function NewItemForm({
   const [unit, setUnit] = useState<string>('und');
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
+  const [costType, setCostType] = useState<CostType>('MATERIAL');
+  const [customCategory, setCustomCategory] = useState('');
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -217,6 +258,8 @@ function NewItemForm({
         unit,
         quantity,
         unitCost,
+        costType,
+        customCategory: costType === 'OTRO' ? customCategory || null : null,
       });
     },
     onSuccess: () => {
@@ -224,6 +267,8 @@ function NewItemForm({
       setDescription('');
       setQuantity('');
       setUnitCost('');
+      setCostType('MATERIAL');
+      setCustomCategory('');
       onDone();
     },
   });
@@ -235,61 +280,88 @@ function NewItemForm({
     Number(quantity) > 0 &&
     unitCost !== '' &&
     !isNaN(Number(unitCost)) &&
-    Number(unitCost) >= 0;
+    Number(unitCost) >= 0 &&
+    (costType !== 'OTRO' || customCategory.trim().length > 0);
 
   return (
     <tr>
-      <td colSpan={6} className="py-2 pl-10 pr-3">
-        <div className="grid grid-cols-[1fr_80px_90px_110px_auto] items-center gap-2">
-          <Input
-            autoFocus
-            placeholder="Descripción del ítem…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="h-7 text-xs"
-            onKeyDown={(e) => e.key === 'Escape' && onDone()}
-          />
-          <Select
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-            className="h-7 text-xs"
-          >
-            {UNITS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </Select>
-          <Input
-            type="number"
-            placeholder="Cantidad"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            className="h-7 text-xs"
-            min="0"
-            step="any"
-          />
-          <Input
-            type="number"
-            placeholder="Vr. Unit COP"
-            value={unitCost}
-            onChange={(e) => setUnitCost(e.target.value)}
-            className="h-7 text-xs"
-            min="0"
-            step="any"
-          />
-          <div className="flex gap-1">
-            <Button
-              size="sm"
-              className="h-7 px-3 text-xs"
-              disabled={!canSave || mutation.isPending}
-              onClick={() => mutation.mutate()}
+      <td colSpan={7} className="py-2 pl-10 pr-3">
+        <div className="space-y-2">
+          {/* Row 1: description + unit + quantity + cost */}
+          <div className="grid grid-cols-[1fr_80px_90px_120px] items-center gap-2">
+            <Input
+              autoFocus
+              placeholder="Descripción del ítem…"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="h-7 text-xs"
+              onKeyDown={(e) => e.key === 'Escape' && onDone()}
+            />
+            <Select
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              className="h-7 text-xs"
             >
-              Guardar
-            </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onDone}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
+              {UNITS.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </Select>
+            <Input
+              type="number"
+              placeholder="Cantidad"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="h-7 text-xs"
+              min="0"
+              step="any"
+            />
+            <Input
+              type="number"
+              placeholder="Vr. Unit COP"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+              className="h-7 text-xs"
+              min="0"
+              step="any"
+            />
+          </div>
+          {/* Row 2: cost type + optional custom category + actions */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Tipo de costo:</Label>
+            <Select
+              value={costType}
+              onChange={(e) => setCostType(e.target.value as CostType)}
+              className="h-7 text-xs w-40"
+            >
+              {COST_TYPES.map((ct) => (
+                <option key={ct.value} value={ct.value}>
+                  {ct.label}
+                </option>
+              ))}
+            </Select>
+            {costType === 'OTRO' && (
+              <Input
+                placeholder="Categoría personalizada…"
+                value={customCategory}
+                onChange={(e) => setCustomCategory(e.target.value)}
+                className="h-7 text-xs w-52"
+              />
+            )}
+            <div className="ml-auto flex gap-1">
+              <Button
+                size="sm"
+                className="h-7 px-3 text-xs"
+                disabled={!canSave || mutation.isPending}
+                onClick={() => mutation.mutate()}
+              >
+                Guardar
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onDone}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         </div>
       </td>
@@ -316,7 +388,7 @@ function SubchapterRows({
   return (
     <>
       <tr className="bg-muted/20 text-sm font-medium">
-        <td className="py-1.5 pl-6 pr-4" colSpan={5}>
+        <td className="py-1.5 pl-6 pr-4" colSpan={6}>
           {sub.code} {sub.name}
         </td>
         <td className="py-1.5 pr-3 text-right font-mono text-xs text-muted-foreground">
@@ -330,6 +402,9 @@ function SubchapterRows({
           <td className="py-1.5 pr-4 text-center">{item.unit}</td>
           <td className="py-1.5 pr-4 text-right">{Number(item.quantity).toLocaleString('es-CO')}</td>
           <td className="py-1.5 pr-4 text-right">{formatCOP(item.unitCostCalc)}</td>
+          <td className="py-1.5 pr-3">
+            <CostTypeBadge type={item.costType ?? 'MATERIAL'} custom={item.customCategory} />
+          </td>
           <td className="py-1.5 pr-3 text-right font-medium">
             <div className="flex items-center justify-end gap-2">
               <span>{formatCOP(item.totalCalc)}</span>
@@ -349,7 +424,7 @@ function SubchapterRows({
         <NewItemForm projectId={projectId} sub={sub} onDone={() => setShowItemForm(false)} />
       ) : (
         <tr>
-          <td colSpan={6} className="py-1 pl-10">
+          <td colSpan={7} className="py-1 pl-10">
             <button
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
               onClick={() => setShowItemForm(true)}
@@ -381,7 +456,7 @@ function ChapterRowComponent({
         className="cursor-pointer bg-muted/40 font-semibold hover:bg-muted/60"
         onClick={() => setOpen((o) => !o)}
       >
-        <td className="py-2 pl-2 pr-4" colSpan={5}>
+        <td className="py-2 pl-2 pr-4" colSpan={6}>
           <span className="flex items-center gap-1">
             {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             {chapter.code} — {chapter.name}
@@ -402,7 +477,7 @@ function ChapterRowComponent({
             />
           ) : (
             <tr>
-              <td colSpan={6} className="py-1 pl-6">
+              <td colSpan={7} className="py-1 pl-6">
                 <button
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
                   onClick={(e) => {
@@ -443,6 +518,64 @@ function CostProgressBar({ directCost, totalCost }: { directCost: string; totalC
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>Directo: {formatCOP(directCost)}</span>
         <span>Total: {formatCOP(totalCost)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Cost Breakdown by Type ───────────────────────────────────
+function CostBreakdown({ costByType, customCategories, directCost }: {
+  costByType: Record<string, string>;
+  customCategories: Record<string, string>;
+  directCost: string;
+}) {
+  const total = Number(directCost);
+  const entries = COST_TYPES.map((ct) => ({
+    ...ct,
+    amount: Number(costByType[ct.value] ?? '0'),
+  })).filter((e) => e.amount > 0);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border bg-muted/20 p-4">
+      <h3 className="mb-3 text-sm font-semibold">Distribución por tipo de costo</h3>
+      <div className="space-y-2">
+        {entries.map((entry) => {
+          const pct = total > 0 ? (entry.amount / total) * 100 : 0;
+          const dotCls = COST_TYPE_DOT[entry.value] ?? 'bg-gray-400';
+          return (
+            <div key={entry.value}>
+              <div className="flex items-center justify-between text-xs mb-0.5">
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-block h-2 w-2 rounded-full ${dotCls}`} />
+                  {entry.label}
+                </span>
+                <span className="font-mono">
+                  {formatCOP(entry.amount)}{' '}
+                  <span className="text-muted-foreground">({pct.toFixed(1)}%)</span>
+                </span>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${dotCls}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {/* Custom sub-categories for OTRO */}
+              {entry.value === 'OTRO' && Object.keys(customCategories).length > 0 && (
+                <div className="mt-1 ml-4 space-y-0.5">
+                  {Object.entries(customCategories).map(([cat, amt]) => (
+                    <div key={cat} className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>↳ {cat}</span>
+                      <span className="font-mono">{formatCOP(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -508,6 +641,7 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
                       <th className="py-2 pr-4 text-center font-medium">Und</th>
                       <th className="py-2 pr-4 text-right font-medium">Cantidad</th>
                       <th className="py-2 pr-4 text-right font-medium">Vr. Unit</th>
+                      <th className="py-2 pr-4 font-medium">Tipo</th>
                       <th className="py-2 pr-3 text-right font-medium">Total</th>
                     </tr>
                   </thead>
@@ -541,6 +675,15 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
 
               {/* Progress Bar */}
               <CostProgressBar directCost={summary.directCost} totalCost={summary.totalCost} />
+
+              {/* Cost breakdown by type */}
+              {summary.costByType && (
+                <CostBreakdown
+                  costByType={summary.costByType}
+                  customCategories={summary.customCategories ?? {}}
+                  directCost={summary.directCost}
+                />
+              )}
             </>
           )}
           {summary && summary.chapters.every((c) => c.subchapters.every((s) => s.items.length === 0)) && (
