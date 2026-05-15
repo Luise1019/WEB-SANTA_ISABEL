@@ -61,7 +61,6 @@ const modules = [
     title: 'Flujo de caja',
     description: 'Devengo, caja y crédito',
     color: 'text-orange-600',
-    disabled: true,
   },
   {
     href: 'sales',
@@ -69,7 +68,6 @@ const modules = [
     title: 'Ventas',
     description: 'Unidades, precios y reservas',
     color: 'text-purple-600',
-    disabled: true,
   },
   {
     href: 'changes',
@@ -77,7 +75,6 @@ const modules = [
     title: 'Cambios',
     description: 'Órdenes de cambio y aprobaciones',
     color: 'text-red-600',
-    disabled: true,
   },
   {
     href: 'dashboard',

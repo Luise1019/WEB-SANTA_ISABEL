@@ -205,6 +205,126 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // Sales
+  getSalesSummary: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/summary`),
+  listTowers: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/sales/towers`),
+  listUnits: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/sales/units`),
+  createTower: (
+    projectId: string,
+    input: { code: string; name: string; floors?: number },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/towers`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  createUnit: (projectId: string, input: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/units`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listSales: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/sales/sales`),
+  createSale: (projectId: string, input: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/sales`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Cash Flow
+  getCashFlowSummary: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/cashflow/summary`),
+  listCashFlowEntries: (projectId: string, year?: number) =>
+    request<Array<Record<string, unknown>>>(
+      `/projects/${projectId}/cashflow/entries${year ? `?year=${year}` : ''}`,
+    ),
+  createCashFlowEntry: (
+    projectId: string,
+    input: {
+      date: string;
+      kind: 'INGRESO' | 'EGRESO';
+      category:
+        | 'VENTA_CUOTA_INICIAL'
+        | 'VENTA_SALDO'
+        | 'DESEMBOLSO_CREDITO'
+        | 'APORTE_SOCIO'
+        | 'EGRESO_CAPITULO'
+        | 'INTERES_CREDITO'
+        | 'AMORTIZACION_CREDITO'
+        | 'IMPUESTOS'
+        | 'OTRO';
+      description: string;
+      amount: string;
+      chapterId?: string | null;
+      budgetItemId?: string | null;
+      saleId?: string | null;
+      loanFacilityId?: string | null;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/cashflow/entries`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  deleteCashFlowEntry: (projectId: string, entryId: string) =>
+    request<void>(`/projects/${projectId}/cashflow/entries/${entryId}`, { method: 'DELETE' }),
+  listLoans: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/cashflow/loans`),
+  createLoan: (
+    projectId: string,
+    input: {
+      bank: string;
+      amount: string;
+      interestRateAnnual: string;
+      startDate: string;
+      termMonths: number;
+      graceMonths?: number;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/cashflow/loans`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Change Orders
+  listChangeOrders: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/changes`),
+  createChangeOrder: (
+    projectId: string,
+    input: {
+      code: string;
+      title: string;
+      justification: string;
+      estimatedCostImpact: string;
+      estimatedScheduleImpactDays?: number;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/changes`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateChangeOrderStatus: (
+    projectId: string,
+    id: string,
+    status: string,
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/changes/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+  approveChangeOrder: (projectId: string, id: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/changes/${id}/approve`, {
+      method: 'POST',
+    }),
+  rejectChangeOrder: (projectId: string, id: string, reason: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/changes/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+  listBaselines: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/changes/baselines`),
+
   // Resources & APUs (global)
   listResources: () => request<Array<Record<string, unknown>>>('/budget/resources'),
   createResource: (input: ResourceInput) =>
