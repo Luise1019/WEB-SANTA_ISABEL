@@ -336,6 +336,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  addResourceRate: (resourceId: string, unitCost: string) =>
+    request<Record<string, unknown>>(`/budget/resources/${resourceId}/rates`, {
+      method: 'POST',
+      body: JSON.stringify({ unitCost }),
+    }),
   listAPUs: () => request<Array<Record<string, unknown>>>('/budget/apus'),
   createAPU: (input: APUInput) =>
     request<Record<string, unknown>>('/budget/apus', {

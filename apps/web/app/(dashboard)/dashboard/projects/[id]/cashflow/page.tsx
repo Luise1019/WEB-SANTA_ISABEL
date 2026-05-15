@@ -3,6 +3,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, TrendingDown, TrendingUp } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +41,18 @@ type Summary = {
   byCategory: Array<{ category: string; kind: string; total: string }>;
 };
 
+type Loan = {
+  id: string;
+  bank: string;
+  amount: string;
+  interestRateAnnual: string;
+  startDate: string;
+  termMonths: number;
+  graceMonths: number;
+  disbursements: Array<{ amount: string }>;
+  payments: Array<{ amount: string }>;
+};
+
 // ─── Constants ───────────────────────────────────────────────
 const CATEGORIES = [
   { value: 'VENTA_CUOTA_INICIAL', label: 'Cuota inicial venta', kind: 'INGRESO' },
@@ -53,6 +77,23 @@ function formatCOP(value: string | number) {
     currency: 'COP',
     maximumFractionDigits: 0,
   }).format(Number(value));
+}
+
+function formatMonthLabel(month: string): string {
+  // Input: "2024-01" → "Ene 24"
+  const [year, mon] = month.split('-');
+  const date = new Date(Number(year), Number(mon) - 1, 1);
+  return date.toLocaleDateString('es-CO', { month: 'short', year: '2-digit' });
+}
+
+function formatMillions(value: number): string {
+  if (Math.abs(value) >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (Math.abs(value) >= 1_000) {
+    return `${(value / 1_000).toFixed(0)}K`;
+  }
+  return String(value);
 }
 
 // ─── New Entry Form ───────────────────────────────────────────
@@ -176,11 +217,223 @@ function NewEntryForm({ projectId }: { projectId: string }) {
   );
 }
 
+// ─── Loan Section ─────────────────────────────────────────────
+function LoanSection({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [bank, setBank] = useState('');
+  const [amount, setAmount] = useState('');
+  const [interestRateAnnual, setInterestRateAnnual] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [termMonths, setTermMonths] = useState('');
+  const [graceMonths, setGraceMonths] = useState('0');
+
+  const { data: loansData } = useQuery({
+    queryKey: ['loans', projectId],
+    queryFn: () => api.listLoans(projectId),
+  });
+
+  const loans = (loansData ?? []) as unknown as Loan[];
+
+  const createLoan = useMutation({
+    mutationFn: () =>
+      api.createLoan(projectId, {
+        bank,
+        amount,
+        interestRateAnnual,
+        startDate,
+        termMonths: Number(termMonths),
+        graceMonths: Number(graceMonths),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['loans', projectId] });
+      setShowForm(false);
+      setBank('');
+      setAmount('');
+      setInterestRateAnnual('');
+      setStartDate('');
+      setTermMonths('');
+      setGraceMonths('0');
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Crédito constructor</CardTitle>
+          <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
+            <Plus className="mr-1 h-4 w-4" />
+            Nuevo crédito
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loans.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay créditos registrados. Agrega el primero con el botón superior.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b">
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="py-2 pr-3 font-medium">Banco</th>
+                  <th className="py-2 pr-3 text-right font-medium">Monto aprobado</th>
+                  <th className="py-2 pr-3 text-right font-medium">Tasa E.A.</th>
+                  <th className="py-2 pr-3 font-medium">Inicio</th>
+                  <th className="py-2 pr-3 text-right font-medium">Plazo</th>
+                  <th className="py-2 text-right font-medium">Desembolsado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((loan) => {
+                  const disbursed = loan.disbursements.reduce(
+                    (s, d) => s + Number(d.amount),
+                    0,
+                  );
+                  return (
+                    <tr key={loan.id} className="border-b last:border-0 hover:bg-muted/20">
+                      <td className="py-2 pr-3 font-medium">{loan.bank}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {formatCOP(loan.amount)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {Number(loan.interestRateAnnual).toFixed(2)}%
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        {new Date(loan.startDate).toLocaleDateString('es-CO')}
+                      </td>
+                      <td className="py-2 pr-3 text-right">{loan.termMonths} meses</td>
+                      <td className="py-2 text-right font-mono text-green-700">
+                        {formatCOP(disbursed)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {showForm && (
+          <Card className="border-dashed mt-2">
+            <CardHeader>
+              <CardTitle className="text-sm">Nuevo crédito constructor</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="space-y-1 col-span-2 sm:col-span-1">
+                  <Label className="text-xs">Banco / Entidad</Label>
+                  <Input
+                    value={bank}
+                    onChange={(e) => setBank(e.target.value)}
+                    placeholder="Bancolombia"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Monto aprobado (COP)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="500000000"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Tasa E.A. %</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={interestRateAnnual}
+                    onChange={(e) => setInterestRateAnnual(e.target.value)}
+                    placeholder="12.5"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Fecha inicio</Label>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Plazo (meses)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={termMonths}
+                    onChange={(e) => setTermMonths(e.target.value)}
+                    placeholder="24"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Meses gracia</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={graceMonths}
+                    onChange={(e) => setGraceMonths(e.target.value)}
+                    placeholder="0"
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={
+                    !bank || !amount || !interestRateAnnual || !startDate || !termMonths || createLoan.isPending
+                  }
+                  onClick={() => createLoan.mutate()}
+                >
+                  Guardar crédito
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Custom Tooltip ───────────────────────────────────────────
+function CopTooltip({ active, payload, label }: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
+      <p className="font-medium mb-1">{label}</p>
+      {payload.map((p) => (
+        <p key={p.name} style={{ color: p.color }}>
+          {p.name}: {formatCOP(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────
 export default function CashflowPage({ params }: { params: { id: string } }) {
   const { id: projectId } = params;
   const qc = useQueryClient();
   const [kindFilter, setKindFilter] = useState<'ALL' | 'INGRESO' | 'EGRESO'>('ALL');
+  const [chartMode, setChartMode] = useState<'bar' | 'curve'>('bar');
 
   const { data: summaryData } = useQuery({
     queryKey: ['cashflow-summary', projectId],
@@ -207,6 +460,41 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
     () => (kindFilter === 'ALL' ? allEntries : allEntries.filter((e) => e.kind === kindFilter)),
     [allEntries, kindFilter],
   );
+
+  // Chart data: transform byMonth for recharts
+  const barChartData = useMemo(() => {
+    if (!summary?.byMonth) return [];
+    return summary.byMonth.map((m) => ({
+      month: formatMonthLabel(m.month),
+      Ingresos: Number(m.ingresos),
+      Egresos: Number(m.egresos),
+    }));
+  }, [summary]);
+
+  const sCurveData = useMemo(() => {
+    if (!summary?.byMonth) return [];
+    let cumIngresos = 0;
+    let cumEgresos = 0;
+    return summary.byMonth.map((m) => {
+      cumIngresos += Number(m.ingresos);
+      cumEgresos += Number(m.egresos);
+      return {
+        month: formatMonthLabel(m.month),
+        'Ingresos acumulados': cumIngresos,
+        'Egresos acumulados': cumEgresos,
+      };
+    });
+  }, [summary]);
+
+  // Cumulative net for monthly table
+  const byMonthWithCumulative = useMemo(() => {
+    if (!summary?.byMonth) return [];
+    let cumNet = 0;
+    return summary.byMonth.map((m) => {
+      cumNet += Number(m.net);
+      return { ...m, cumNet };
+    });
+  }, [summary]);
 
   return (
     <div className="space-y-6">
@@ -258,6 +546,98 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
+      {/* Charts Section */}
+      {summary && summary.byMonth.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Evolución mensual</CardTitle>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setChartMode('bar')}
+                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                    chartMode === 'bar'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  Barras
+                </button>
+                <button
+                  onClick={() => setChartMode('curve')}
+                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                    chartMode === 'curve'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  }`}
+                >
+                  Curva S
+                </button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {chartMode === 'bar' ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={barChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={formatMillions}
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<CopTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="Ingresos" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Egresos" fill="#dc2626" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={sCurveData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={formatMillions}
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip content={<CopTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Area
+                    type="monotone"
+                    dataKey="Ingresos acumulados"
+                    stroke="#16a34a"
+                    fill="#16a34a"
+                    fillOpacity={0.2}
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="Egresos acumulados"
+                    stroke="#dc2626"
+                    fill="#dc2626"
+                    fillOpacity={0.2}
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Monthly Summary */}
       {summary && summary.byMonth.length > 0 && (
         <Card>
@@ -272,11 +652,12 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
                     <th className="py-2 pr-4 font-medium">Mes</th>
                     <th className="py-2 pr-4 text-right font-medium">Ingresos</th>
                     <th className="py-2 pr-4 text-right font-medium">Egresos</th>
-                    <th className="py-2 text-right font-medium">Neto</th>
+                    <th className="py-2 pr-4 text-right font-medium">Neto</th>
+                    <th className="py-2 text-right font-medium">Acumulado neto</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.byMonth.map((m) => (
+                  {byMonthWithCumulative.map((m) => (
                     <tr key={m.month} className="border-b last:border-0">
                       <td className="py-2 pr-4 font-medium">{m.month}</td>
                       <td className="py-2 pr-4 text-right text-green-700 font-mono">
@@ -286,11 +667,18 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
                         {formatCOP(m.egresos)}
                       </td>
                       <td
-                        className={`py-2 text-right font-mono font-medium ${
+                        className={`py-2 pr-4 text-right font-mono font-medium ${
                           Number(m.net) >= 0 ? 'text-green-700' : 'text-red-700'
                         }`}
                       >
                         {formatCOP(m.net)}
+                      </td>
+                      <td
+                        className={`py-2 text-right font-mono font-bold ${
+                          m.cumNet >= 0 ? 'text-green-700' : 'text-red-700'
+                        }`}
+                      >
+                        {formatCOP(m.cumNet)}
                       </td>
                     </tr>
                   ))}
@@ -392,6 +780,9 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
           )}
         </CardContent>
       </Card>
+
+      {/* Loan Facilities */}
+      <LoanSection projectId={projectId} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Plus, Settings, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Plus, Settings, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -379,11 +379,40 @@ function SubchapterRows({
 }) {
   const qc = useQueryClient();
   const [showItemForm, setShowItemForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState('');
+  const [editUC, setEditUC] = useState('');
 
   const deleteMutation = useMutation({
     mutationFn: (itemId: string) => api.deleteItem(projectId, itemId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['budget-summary', projectId] }),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ itemId, quantity, unitCost }: { itemId: string; quantity: string; unitCost: string }) =>
+      api.updateItem(projectId, itemId, { quantity, unitCost }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget-summary', projectId] });
+      setEditingId(null);
+    },
+  });
+
+  function startEdit(item: ItemData) {
+    setEditingId(item.id);
+    setEditQty(item.quantity);
+    setEditUC(item.unitCostCalc);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditQty('');
+    setEditUC('');
+  }
+
+  function saveEdit(itemId: string) {
+    if (!editQty || !editUC) return;
+    updateMutation.mutate({ itemId, quantity: editQty, unitCost: editUC });
+  }
 
   return (
     <>
@@ -395,31 +424,111 @@ function SubchapterRows({
           {formatCOP(sub.subtotal)}
         </td>
       </tr>
-      {sub.items.map((item) => (
-        <tr key={item.id} className="border-b text-xs hover:bg-muted/10 group">
-          <td className="py-1.5 pl-10 pr-2 font-mono">{item.code}</td>
-          <td className="py-1.5 pr-4">{item.description}</td>
-          <td className="py-1.5 pr-4 text-center">{item.unit}</td>
-          <td className="py-1.5 pr-4 text-right">{Number(item.quantity).toLocaleString('es-CO')}</td>
-          <td className="py-1.5 pr-4 text-right">{formatCOP(item.unitCostCalc)}</td>
-          <td className="py-1.5 pr-3">
-            <CostTypeBadge type={item.costType ?? 'MATERIAL'} custom={item.customCategory} />
-          </td>
-          <td className="py-1.5 pr-3 text-right font-medium">
-            <div className="flex items-center justify-end gap-2">
-              <span>{formatCOP(item.totalCalc)}</span>
-              <button
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive/80"
-                title="Eliminar ítem"
-                onClick={() => deleteMutation.mutate(item.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </td>
-        </tr>
-      ))}
+      {sub.items.map((item) => {
+        const isEditing = editingId === item.id;
+
+        if (isEditing) {
+          return (
+            <tr key={item.id} className="border-b bg-primary/5 text-xs">
+              <td className="py-1.5 pl-10 pr-2 font-mono">{item.code}</td>
+              <td className="py-1.5 pr-4">{item.description}</td>
+              <td className="py-1.5 pr-4 text-center">{item.unit}</td>
+              {/* Editable quantity */}
+              <td className="py-1.5 pr-2">
+                <Input
+                  autoFocus
+                  type="number"
+                  value={editQty}
+                  onChange={(e) => setEditQty(e.target.value)}
+                  className="h-6 w-24 text-right text-xs"
+                  min="0"
+                  step="any"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit(item.id);
+                    if (e.key === 'Escape') cancelEdit();
+                  }}
+                />
+              </td>
+              {/* Editable unit cost */}
+              <td className="py-1.5 pr-2">
+                <Input
+                  type="number"
+                  value={editUC}
+                  onChange={(e) => setEditUC(e.target.value)}
+                  className="h-6 w-28 text-right text-xs"
+                  min="0"
+                  step="any"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit(item.id);
+                    if (e.key === 'Escape') cancelEdit();
+                  }}
+                />
+              </td>
+              <td className="py-1.5 pr-3">
+                <CostTypeBadge type={item.costType ?? 'MATERIAL'} custom={item.customCategory} />
+              </td>
+              {/* Actions */}
+              <td className="py-1.5 pr-3 text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    className="rounded p-0.5 text-green-600 hover:bg-green-50 transition-colors"
+                    title="Guardar cambios"
+                    onClick={() => saveEdit(item.id)}
+                    disabled={updateMutation.isPending}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted transition-colors"
+                    title="Cancelar edición"
+                    onClick={cancelEdit}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          );
+        }
+
+        return (
+          <tr key={item.id} className="border-b text-xs hover:bg-muted/10 group">
+            <td className="py-1.5 pl-10 pr-2 font-mono">{item.code}</td>
+            <td className="py-1.5 pr-4">{item.description}</td>
+            <td className="py-1.5 pr-4 text-center">{item.unit}</td>
+            <td
+              className="cursor-pointer py-1.5 pr-4 text-right hover:text-primary"
+              title="Clic para editar"
+              onClick={() => startEdit(item)}
+            >
+              {Number(item.quantity).toLocaleString('es-CO')}
+            </td>
+            <td
+              className="cursor-pointer py-1.5 pr-4 text-right hover:text-primary"
+              title="Clic para editar"
+              onClick={() => startEdit(item)}
+            >
+              {formatCOP(item.unitCostCalc)}
+            </td>
+            <td className="py-1.5 pr-3">
+              <CostTypeBadge type={item.costType ?? 'MATERIAL'} custom={item.customCategory} />
+            </td>
+            <td className="py-1.5 pr-3 text-right font-medium">
+              <div className="flex items-center justify-end gap-2">
+                <span>{formatCOP(item.totalCalc)}</span>
+                <button
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive/80"
+                  title="Eliminar ítem"
+                  onClick={() => deleteMutation.mutate(item.id)}
+                  disabled={deleteMutation.isPending}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </td>
+          </tr>
+        );
+      })}
       {showItemForm ? (
         <NewItemForm projectId={projectId} sub={sub} onDone={() => setShowItemForm(false)} />
       ) : (
@@ -600,6 +709,12 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
           <p className="text-muted-foreground">Estructura de capítulos, ítems y análisis AIU.</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/dashboard/projects/${projectId}/budget/apus`}>
+              <Settings className="mr-1 h-4 w-4" />
+              APUs
+            </Link>
+          </Button>
           <Button variant="outline" asChild>
             <Link href={`/dashboard/projects/${projectId}/budget/resources`}>
               <Plus className="mr-1 h-4 w-4" />
