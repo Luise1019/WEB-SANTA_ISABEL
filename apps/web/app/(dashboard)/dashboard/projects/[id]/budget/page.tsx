@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Plus, Settings } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Settings, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -9,10 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
 import { api } from '@/lib/api-client';
 
 // ─── Types ───────────────────────────────────────────────────
-type ItemRow = {
+type ItemData = {
   id: string;
   code: string;
   description: string;
@@ -22,24 +23,24 @@ type ItemRow = {
   totalCalc: string;
 };
 
-type SubchapterRow = {
+type SubchapterData = {
   id: string;
   code: string;
   name: string;
-  items: ItemRow[];
+  items: ItemData[];
   subtotal: string;
 };
 
-type ChapterRow = {
+type ChapterData = {
   id: string;
   code: string;
   name: string;
-  subchapters: SubchapterRow[];
+  subchapters: SubchapterData[];
   total: string;
 };
 
 type Summary = {
-  chapters: ChapterRow[];
+  chapters: ChapterData[];
   directCost: string;
   aiuAmount: string;
   ivaAmount: string;
@@ -52,6 +53,8 @@ type Summary = {
   };
 };
 
+const UNITS = ['m2', 'm3', 'ml', 'kg', 'und', 'glb', 'hr'] as const;
+
 // ─── Helpers ─────────────────────────────────────────────────
 function formatCOP(value: string | number) {
   return new Intl.NumberFormat('es-CO', {
@@ -61,7 +64,7 @@ function formatCOP(value: string | number) {
   }).format(Number(value));
 }
 
-// ─── AIU Dialog ──────────────────────────────────────────────
+// ─── AIU Panel ───────────────────────────────────────────────
 function AIUPanel({
   projectId,
   config,
@@ -130,10 +133,247 @@ function AIUPanel({
   );
 }
 
-// ─── Chapter Row ─────────────────────────────────────────────
-function ChapterRow({ chapter }: { chapter: ChapterRow }) {
+// ─── New Subchapter Form ──────────────────────────────────────
+function NewSubchapterForm({
+  projectId,
+  chapter,
+  onDone,
+}: {
+  projectId: string;
+  chapter: ChapterData;
+  onDone: () => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const nextNum = chapter.subchapters.length + 1;
+      const code = `${chapter.code}.${String(nextNum).padStart(2, '0')}`;
+      return api.createSubchapter(projectId, chapter.id, { code, name });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget-summary', projectId] });
+      setName('');
+      onDone();
+    },
+  });
+
+  return (
+    <tr>
+      <td colSpan={6} className="py-2 pl-6 pr-3">
+        <div className="flex items-center gap-2">
+          <Input
+            autoFocus
+            placeholder="Nombre del subcapítulo…"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="h-7 text-xs"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && name.trim()) mutation.mutate();
+              if (e.key === 'Escape') onDone();
+            }}
+          />
+          <Button
+            size="sm"
+            className="h-7 px-3 text-xs"
+            disabled={!name.trim() || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            Guardar
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onDone}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── New Item Form ────────────────────────────────────────────
+function NewItemForm({
+  projectId,
+  sub,
+  onDone,
+}: {
+  projectId: string;
+  sub: SubchapterData;
+  onDone: () => void;
+}) {
+  const qc = useQueryClient();
+  const [description, setDescription] = useState('');
+  const [unit, setUnit] = useState<string>('und');
+  const [quantity, setQuantity] = useState('');
+  const [unitCost, setUnitCost] = useState('');
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const nextNum = sub.items.length + 1;
+      const code = `${sub.code}.${String(nextNum).padStart(2, '0')}`;
+      return api.createItem(projectId, sub.id, {
+        code,
+        description,
+        unit,
+        quantity,
+        unitCost,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['budget-summary', projectId] });
+      setDescription('');
+      setQuantity('');
+      setUnitCost('');
+      onDone();
+    },
+  });
+
+  const canSave =
+    description.trim().length >= 2 &&
+    quantity !== '' &&
+    !isNaN(Number(quantity)) &&
+    Number(quantity) > 0 &&
+    unitCost !== '' &&
+    !isNaN(Number(unitCost)) &&
+    Number(unitCost) >= 0;
+
+  return (
+    <tr>
+      <td colSpan={6} className="py-2 pl-10 pr-3">
+        <div className="grid grid-cols-[1fr_80px_90px_110px_auto] items-center gap-2">
+          <Input
+            autoFocus
+            placeholder="Descripción del ítem…"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="h-7 text-xs"
+            onKeyDown={(e) => e.key === 'Escape' && onDone()}
+          />
+          <Select
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            className="h-7 text-xs"
+          >
+            {UNITS.map((u) => (
+              <option key={u} value={u}>
+                {u}
+              </option>
+            ))}
+          </Select>
+          <Input
+            type="number"
+            placeholder="Cantidad"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            className="h-7 text-xs"
+            min="0"
+            step="any"
+          />
+          <Input
+            type="number"
+            placeholder="Vr. Unit COP"
+            value={unitCost}
+            onChange={(e) => setUnitCost(e.target.value)}
+            className="h-7 text-xs"
+            min="0"
+            step="any"
+          />
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs"
+              disabled={!canSave || mutation.isPending}
+              onClick={() => mutation.mutate()}
+            >
+              Guardar
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={onDone}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Subchapter Rows ──────────────────────────────────────────
+function SubchapterRows({
+  sub,
+  projectId,
+}: {
+  sub: SubchapterData;
+  projectId: string;
+}) {
+  const qc = useQueryClient();
+  const [showItemForm, setShowItemForm] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: (itemId: string) => api.deleteItem(projectId, itemId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['budget-summary', projectId] }),
+  });
+
+  return (
+    <>
+      <tr className="bg-muted/20 text-sm font-medium">
+        <td className="py-1.5 pl-6 pr-4" colSpan={5}>
+          {sub.code} {sub.name}
+        </td>
+        <td className="py-1.5 pr-3 text-right font-mono text-xs text-muted-foreground">
+          {formatCOP(sub.subtotal)}
+        </td>
+      </tr>
+      {sub.items.map((item) => (
+        <tr key={item.id} className="border-b text-xs hover:bg-muted/10 group">
+          <td className="py-1.5 pl-10 pr-2 font-mono">{item.code}</td>
+          <td className="py-1.5 pr-4">{item.description}</td>
+          <td className="py-1.5 pr-4 text-center">{item.unit}</td>
+          <td className="py-1.5 pr-4 text-right">{Number(item.quantity).toLocaleString('es-CO')}</td>
+          <td className="py-1.5 pr-4 text-right">{formatCOP(item.unitCostCalc)}</td>
+          <td className="py-1.5 pr-3 text-right font-medium">
+            <div className="flex items-center justify-end gap-2">
+              <span>{formatCOP(item.totalCalc)}</span>
+              <button
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive/80"
+                title="Eliminar ítem"
+                onClick={() => deleteMutation.mutate(item.id)}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </td>
+        </tr>
+      ))}
+      {showItemForm ? (
+        <NewItemForm projectId={projectId} sub={sub} onDone={() => setShowItemForm(false)} />
+      ) : (
+        <tr>
+          <td colSpan={6} className="py-1 pl-10">
+            <button
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+              onClick={() => setShowItemForm(true)}
+            >
+              <Plus className="h-3 w-3" />
+              Agregar ítem
+            </button>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+// ─── Chapter Row Component ────────────────────────────────────
+function ChapterRowComponent({
+  chapter,
+  projectId,
+}: {
+  chapter: ChapterData;
+  projectId: string;
+}) {
   const [open, setOpen] = useState(true);
-  const hasItems = chapter.subchapters.some((s) => s.items.length > 0);
+  const [showSubchapterForm, setShowSubchapterForm] = useState(false);
 
   return (
     <>
@@ -149,43 +389,62 @@ function ChapterRow({ chapter }: { chapter: ChapterRow }) {
         </td>
         <td className="py-2 pr-3 text-right font-mono text-sm">{formatCOP(chapter.total)}</td>
       </tr>
-      {open &&
-        chapter.subchapters.map((sub) => (
-          <SubchapterRows key={sub.id} sub={sub} />
-        ))}
-      {open && !hasItems && (
-        <tr>
-          <td colSpan={6} className="py-1 pl-8 text-xs text-muted-foreground">
-            Sin ítems aún.
-          </td>
-        </tr>
+      {open && (
+        <>
+          {chapter.subchapters.map((sub) => (
+            <SubchapterRows key={sub.id} sub={sub} projectId={projectId} />
+          ))}
+          {showSubchapterForm ? (
+            <NewSubchapterForm
+              projectId={projectId}
+              chapter={chapter}
+              onDone={() => setShowSubchapterForm(false)}
+            />
+          ) : (
+            <tr>
+              <td colSpan={6} className="py-1 pl-6">
+                <button
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowSubchapterForm(true);
+                  }}
+                >
+                  <Plus className="h-3 w-3" />
+                  Agregar subcapítulo
+                </button>
+              </td>
+            </tr>
+          )}
+        </>
       )}
     </>
   );
 }
 
-function SubchapterRows({ sub }: { sub: SubchapterRow }) {
+// ─── Progress Bar ─────────────────────────────────────────────
+function CostProgressBar({ directCost, totalCost }: { directCost: string; totalCost: string }) {
+  const direct = Number(directCost);
+  const total = Number(totalCost);
+  const pct = total > 0 ? Math.min(100, (direct / total) * 100) : 0;
+
   return (
-    <>
-      <tr className="bg-muted/20 text-sm font-medium">
-        <td className="py-1.5 pl-6 pr-4" colSpan={5}>
-          {sub.code} {sub.name}
-        </td>
-        <td className="py-1.5 pr-3 text-right font-mono text-xs text-muted-foreground">
-          {formatCOP(sub.subtotal)}
-        </td>
-      </tr>
-      {sub.items.map((item) => (
-        <tr key={item.id} className="border-b text-xs hover:bg-muted/10">
-          <td className="py-1.5 pl-10 pr-2 font-mono">{item.code}</td>
-          <td className="py-1.5 pr-4">{item.description}</td>
-          <td className="py-1.5 pr-4 text-center">{item.unit}</td>
-          <td className="py-1.5 pr-4 text-right">{Number(item.quantity).toLocaleString('es-CO')}</td>
-          <td className="py-1.5 pr-4 text-right">{formatCOP(item.unitCostCalc)}</td>
-          <td className="py-1.5 pr-3 text-right font-medium">{formatCOP(item.totalCalc)}</td>
-        </tr>
-      ))}
-    </>
+    <div className="mt-4 space-y-1">
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>Costo directo vs total</span>
+        <span>{pct.toFixed(1)}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>Directo: {formatCOP(directCost)}</span>
+        <span>Total: {formatCOP(totalCost)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -254,7 +513,7 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
                   </thead>
                   <tbody>
                     {summary.chapters.map((ch) => (
-                      <ChapterRow key={ch.id} chapter={ch} />
+                      <ChapterRowComponent key={ch.id} chapter={ch} projectId={projectId} />
                     ))}
                   </tbody>
                 </table>
@@ -279,11 +538,14 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
                   <span className="font-mono text-primary">{formatCOP(summary.totalCost)}</span>
                 </div>
               </div>
+
+              {/* Progress Bar */}
+              <CostProgressBar directCost={summary.directCost} totalCost={summary.totalCost} />
             </>
           )}
           {summary && summary.chapters.every((c) => c.subchapters.every((s) => s.items.length === 0)) && (
             <p className="mt-4 text-sm text-muted-foreground">
-              Los capítulos están vacíos. Crea subcapítulos e ítems, o importa desde Excel.
+              Los capítulos están vacíos. Agrega subcapítulos e ítems usando los botones &quot;+&quot; en cada fila.
             </p>
           )}
         </CardContent>
