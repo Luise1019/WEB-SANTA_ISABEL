@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { use, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -133,8 +133,8 @@ function NewOCForm({ projectId, onDone }: { projectId: string; onDone: () => voi
   );
 }
 
-export default function ChangesPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function ChangesPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
 

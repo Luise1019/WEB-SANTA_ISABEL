@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,8 @@ import { api } from '@/lib/api-client';
 
 type Task = { id: string; code: string; name: string };
 
-export default function NewTaskPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function NewTaskPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const router = useRouter();
   const qc = useQueryClient();
 

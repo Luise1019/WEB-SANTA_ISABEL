@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { use, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,8 +36,8 @@ function formatCOP(value: string | number) {
   }).format(Number(value));
 }
 
-export default function ResourcesPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function ResourcesPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const qc = useQueryClient();
 
   const [type, setType] = useState('MANO_OBRA');

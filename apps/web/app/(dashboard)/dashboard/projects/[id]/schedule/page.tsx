@@ -42,8 +42,8 @@ const KIND_LABELS: Record<string, string> = {
   MILESTONE: 'Hito',
 };
 
-export default function SchedulePage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function SchedulePage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const qc = useQueryClient();
   const [showGantt, setShowGantt] = useState(true);
   const [cpmRunning, setCpmRunning] = useState(false);

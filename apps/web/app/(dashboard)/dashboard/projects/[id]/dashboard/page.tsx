@@ -164,8 +164,8 @@ function AlertBanner({ alert }: { alert: AlertItem }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function DashboardPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function DashboardPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
 
   const { data: rawData, isLoading, error } = useQuery({
     queryKey: ['dashboard', projectId],

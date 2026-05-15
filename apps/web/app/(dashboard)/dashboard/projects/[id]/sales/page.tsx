@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronUp, Plus, X } from 'lucide-react';
 import Link from 'next/link';
-import { use, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -306,8 +306,8 @@ function NewUnitForm({ projectId, towers, onClose }: NewUnitFormProps) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function SalesPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function SalesPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [search, setSearch] = useState('');
   const [showNewUnit, setShowNewUnit] = useState(false);

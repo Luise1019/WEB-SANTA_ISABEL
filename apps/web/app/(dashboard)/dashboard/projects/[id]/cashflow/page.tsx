@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, TrendingDown, TrendingUp } from 'lucide-react';
-import { use, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -177,8 +177,8 @@ function NewEntryForm({ projectId }: { projectId: string }) {
 }
 
 // ─── Main Page ───────────────────────────────────────────────
-export default function CashflowPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id: projectId } = use(params);
+export default function CashflowPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
   const qc = useQueryClient();
   const [kindFilter, setKindFilter] = useState<'ALL' | 'INGRESO' | 'EGRESO'>('ALL');
 

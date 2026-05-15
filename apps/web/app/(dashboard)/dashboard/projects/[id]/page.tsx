@@ -110,8 +110,8 @@ const modules: Array<{
   },
 ];
 
-export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ProjectDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project', id],
