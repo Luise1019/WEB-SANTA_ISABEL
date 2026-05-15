@@ -54,7 +54,6 @@ const modules = [
     title: 'Cronograma',
     description: 'Gantt, WBS y ruta crítica',
     color: 'text-blue-600',
-    disabled: true,
   },
   {
     href: 'cashflow',

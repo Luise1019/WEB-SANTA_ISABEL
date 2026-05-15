@@ -162,6 +162,49 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // Schedule
+  listTasks: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/schedule/tasks`),
+  createTask: (
+    projectId: string,
+    input: {
+      code: string;
+      name: string;
+      kind?: string;
+      parentId?: string | null;
+      plannedStart: string;
+      plannedEnd: string;
+      durationDays: number;
+      progress?: number;
+    },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateTask: (projectId: string, taskId: string, input: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteTask: (projectId: string, taskId: string) =>
+    request<void>(`/projects/${projectId}/schedule/tasks/${taskId}`, { method: 'DELETE' }),
+  updateTaskProgress: (projectId: string, taskId: string, progress: number) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/tasks/${taskId}/progress`, {
+      method: 'PATCH',
+      body: JSON.stringify({ progress }),
+    }),
+  computeCPM: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/schedule/cpm`),
+  createDependency: (
+    projectId: string,
+    input: { predecessorId: string; successorId: string; type?: string; lagDays?: number },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   // Resources & APUs (global)
   listResources: () => request<Array<Record<string, unknown>>>('/budget/resources'),
   createResource: (input: ResourceInput) =>
