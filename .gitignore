@@ -64,3 +64,4 @@ tmp/
 *.xlsm
 .~lock.*.xlsx#
 ~$*
+*.zip

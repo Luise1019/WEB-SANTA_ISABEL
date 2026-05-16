@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.log
+**/.env
+**/.env.local
+**/.env.*.local
+**/coverage
+**/.git
+**/.claude
+*.zip
+*.xlsx
+README.md
+SETUP.md
