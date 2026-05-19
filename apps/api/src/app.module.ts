@@ -12,8 +12,10 @@ import { BudgetModule } from './modules/budget/budget.module';
 import { CashflowModule } from './modules/cashflow/cashflow.module';
 import { ChangesModule } from './modules/changes/changes.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { FeasibilityModule } from './modules/feasibility/feasibility.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportsModule } from './modules/imports/imports.module';
+import { LogbookModule } from './modules/logbook/logbook.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -51,7 +53,9 @@ import { UsersModule } from './modules/users/users.module';
     ChangesModule,
     DashboardModule,
     ReportsModule,
+    FeasibilityModule,
     ImportsModule,
+    LogbookModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

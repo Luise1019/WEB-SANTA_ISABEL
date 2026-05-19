@@ -16,6 +16,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
+import { ModuleHeader } from '@/components/module-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -417,8 +418,9 @@ function CopTooltip({ active, payload, label }: {
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-background p-2 shadow-sm text-xs">
-      <p className="font-medium mb-1">{label}</p>
+    <div className="rounded-lg border p-2 shadow-sm text-xs"
+      style={{ background: 'rgba(10,15,40,0.95)', borderColor: 'rgba(99,179,237,0.2)', color: '#fff' }}>
+      <p className="font-medium mb-1" style={{ color: '#e2e8f0' }}>{label}</p>
       {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>
           {p.name}: {formatCOP(p.value)}
@@ -498,13 +500,12 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Flujo de Caja</h1>
-          <p className="text-muted-foreground">Ingresos y egresos del proyecto.</p>
-        </div>
-        <NewEntryForm projectId={projectId} />
-      </header>
+      <ModuleHeader
+        title="Flujo de Caja"
+        description="Ingresos y egresos del proyecto · Crédito constructor · Curva S acumulada"
+        infoText="Registra cada movimiento de dinero (ingreso o egreso) con su fecha y categoría. La Curva S muestra la acumulación de ingresos y egresos en el tiempo. El saldo neto acumulado indica la posición de caja del proyecto."
+        actions={<NewEntryForm projectId={projectId} />}
+      />
 
       {/* Summary Cards */}
       {summary && (
@@ -548,94 +549,112 @@ export default function CashflowPage({ params }: { params: { id: string } }) {
 
       {/* Charts Section */}
       {summary && summary.byMonth.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Evolución mensual</CardTitle>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => setChartMode('bar')}
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                    chartMode === 'bar'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  Barras
-                </button>
-                <button
-                  onClick={() => setChartMode('curve')}
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                    chartMode === 'curve'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  }`}
-                >
-                  Curva S
-                </button>
-              </div>
+        <div className="chart-section">
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm font-semibold text-slate-300">Evolución mensual</p>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setChartMode('bar')}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  chartMode === 'bar'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+                style={chartMode !== 'bar' ? { background: 'rgba(15,23,60,0.8)' } : undefined}
+              >
+                Barras
+              </button>
+              <button
+                onClick={() => setChartMode('curve')}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  chartMode === 'curve'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+                style={chartMode !== 'curve' ? { background: 'rgba(15,23,60,0.8)' } : undefined}
+              >
+                Curva S
+              </button>
             </div>
-          </CardHeader>
-          <CardContent>
-            {chartMode === 'bar' ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={barChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="month"
-                    tick={{ fontSize: 11 }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={formatMillions}
-                    tick={{ fontSize: 11 }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip content={<CopTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Ingresos" fill="#16a34a" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="Egresos" fill="#dc2626" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={sCurveData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="month"
-                    tick={{ fontSize: 11 }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={formatMillions}
-                    tick={{ fontSize: 11 }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip content={<CopTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area
-                    type="monotone"
-                    dataKey="Ingresos acumulados"
-                    stroke="#16a34a"
-                    fill="#16a34a"
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="Egresos acumulados"
-                    stroke="#dc2626"
-                    fill="#dc2626"
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+          {chartMode === 'bar' ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barChartData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="ingGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#059669" />
+                  </linearGradient>
+                  <linearGradient id="egGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#f43f5e" />
+                    <stop offset="100%" stopColor="#e11d48" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.1)" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tickFormatter={formatMillions}
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip content={<CopTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                <Bar dataKey="Ingresos" fill="url(#ingGrad)" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Egresos"  fill="url(#egGrad)"  radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={sCurveData} margin={{ top: 4, right: 8, left: 8, bottom: 4 }}>
+                <defs>
+                  <linearGradient id="ingAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="egAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#f43f5e" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.1)" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tickFormatter={formatMillions}
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip content={<CopTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                <Area
+                  type="monotone"
+                  dataKey="Ingresos acumulados"
+                  stroke="#10b981"
+                  fill="url(#ingAreaGrad)"
+                  fillOpacity={1}
+                  strokeWidth={2.5}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Egresos acumulados"
+                  stroke="#f43f5e"
+                  fill="url(#egAreaGrad)"
+                  fillOpacity={1}
+                  strokeWidth={2.5}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </div>
       )}
 
       {/* Monthly Summary */}

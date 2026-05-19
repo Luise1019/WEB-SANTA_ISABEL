@@ -82,4 +82,29 @@
     background-color: hsl(var(--border));
     border-radius: 3px;
   }
+
+  /* ─ Glassmorphism dark chart cards ──────────────────────────── */
+  .glass-dark {
+    background: rgba(10, 15, 40, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(99, 179, 237, 0.15);
+    box-shadow: 0 0 0 1px rgba(99, 179, 237, 0.05), 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  .glass-dark-card {
+    background: rgba(15, 23, 60, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(99, 179, 237, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+  .glow-blue { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+  .glow-green { box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+  .glow-violet { box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+  .chart-section {
+    background: linear-gradient(135deg, #0a0f1e 0%, #0d1b3e 50%, #0a0f1e 100%);
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid rgba(59, 130, 246, 0.15);
+  }
 }

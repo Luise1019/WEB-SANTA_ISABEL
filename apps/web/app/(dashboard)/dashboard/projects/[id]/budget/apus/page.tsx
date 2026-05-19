@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -32,6 +32,7 @@ type APUComponent = {
   resourceId: string;
   quantity: number;
   wasteFactor: number;
+  performance?: number | null;
   resource: Resource;
 };
 
@@ -48,9 +49,11 @@ type ComponentRow = {
   resourceId: string;
   quantity: string;
   wasteFactor: string;
+  rendimiento: string; // performance: units of work per unit time
 };
 
 // ─── Constants ───────────────────────────────────────────────
+const FACTOR_PRESTACIONAL = 0.52;
 const UNITS = ['m2', 'm3', 'ml', 'kg', 'und', 'glb', 'hr'] as const;
 
 const RESOURCE_TYPE_LABEL: Record<ResourceType, string> = {
@@ -69,6 +72,13 @@ const RESOURCE_TYPE_BADGE: Record<ResourceType, string> = {
 
 const RESOURCE_TYPE_ORDER: ResourceType[] = ['MANO_OBRA', 'MATERIAL', 'EQUIPO', 'SUBCONTRATO'];
 
+const RESOURCE_TYPE_SUBTOTAL_BG: Record<ResourceType, string> = {
+  MANO_OBRA: 'bg-blue-50 text-blue-800',
+  MATERIAL: 'bg-amber-50 text-amber-800',
+  EQUIPO: 'bg-purple-50 text-purple-800',
+  SUBCONTRATO: 'bg-gray-50 text-gray-700',
+};
+
 // ─── Helpers ─────────────────────────────────────────────────
 function formatCOP(value: number) {
   return new Intl.NumberFormat('es-CO', {
@@ -78,11 +88,32 @@ function formatCOP(value: number) {
   }).format(value);
 }
 
+/** Apply prestacional factor: MANO_OBRA rate × 1.52, others unchanged */
+function effectiveRate(rate: number, type: ResourceType): number {
+  return type === 'MANO_OBRA' ? rate * (1 + FACTOR_PRESTACIONAL) : rate;
+}
+
 function calcAPUCost(apu: APU): number {
   return apu.components.reduce((sum, comp) => {
     const rate = Number(comp.resource?.rates?.[0]?.unitCost ?? 0);
-    return sum + rate * comp.quantity * (1 + comp.wasteFactor);
+    const effRate = effectiveRate(rate, comp.resource?.type ?? 'MATERIAL');
+    return sum + effRate * comp.quantity * (1 + comp.wasteFactor);
   }, 0);
+}
+
+function calcAPUBreakdown(apu: APU): { mo: number; material: number; equipo: number; subcontrato: number } {
+  const result = { mo: 0, material: 0, equipo: 0, subcontrato: 0 };
+  for (const comp of apu.components) {
+    const rate = Number(comp.resource?.rates?.[0]?.unitCost ?? 0);
+    const effRate = effectiveRate(rate, comp.resource?.type ?? 'MATERIAL');
+    const lineCost = effRate * comp.quantity * (1 + comp.wasteFactor);
+    const t = comp.resource?.type;
+    if (t === 'MANO_OBRA') result.mo += lineCost;
+    else if (t === 'MATERIAL') result.material += lineCost;
+    else if (t === 'EQUIPO') result.equipo += lineCost;
+    else result.subcontrato += lineCost;
+  }
+  return result;
 }
 
 function calcPreviewCost(components: ComponentRow[], resources: Resource[]): number {
@@ -91,9 +122,10 @@ function calcPreviewCost(components: ComponentRow[], resources: Resource[]): num
     const res = resources.find((r) => r.id === row.resourceId);
     if (!res) return sum;
     const rate = Number(res.rates?.[0]?.unitCost ?? 0);
+    const effRate = effectiveRate(rate, res.type);
     const qty = Number(row.quantity) || 0;
     const wf = (Number(row.wasteFactor) || 0) / 100;
-    return sum + rate * qty * (1 + wf);
+    return sum + effRate * qty * (1 + wf);
   }, 0);
 }
 
@@ -112,6 +144,13 @@ function TypeBadge({ type }: { type: ResourceType }) {
 function APURow({ apu }: { apu: APU }) {
   const [expanded, setExpanded] = useState(false);
   const unitCost = calcAPUCost(apu);
+  const breakdown = calcAPUBreakdown(apu);
+
+  // Group components by type
+  const grouped = RESOURCE_TYPE_ORDER.map((type) => ({
+    type,
+    comps: apu.components.filter((c) => c.resource?.type === type),
+  })).filter((g) => g.comps.length > 0);
 
   return (
     <>
@@ -124,13 +163,22 @@ function APURow({ apu }: { apu: APU }) {
         <td className="py-2 pr-4 text-center text-xs">{apu.unit}</td>
         <td className="py-2 pr-4 text-center text-xs">{apu.components.length}</td>
         <td className="py-2 pr-3 text-right font-mono text-xs">
-          <div className="flex items-center justify-end gap-1">
-            {expanded ? (
-              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+          <div className="flex flex-col items-end gap-0.5">
+            <div className="flex items-center gap-1">
+              {expanded ? (
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              )}
+              <span className="font-bold">{formatCOP(unitCost)}</span>
+            </div>
+            {(breakdown.mo > 0 || breakdown.material > 0 || breakdown.equipo > 0) && (
+              <div className="flex gap-1.5 text-[10px] text-muted-foreground">
+                {breakdown.mo > 0 && <span className="text-blue-600">MO: {formatCOP(breakdown.mo)}</span>}
+                {breakdown.material > 0 && <span>Mat: {formatCOP(breakdown.material)}</span>}
+                {breakdown.equipo > 0 && <span>Eq: {formatCOP(breakdown.equipo)}</span>}
+              </div>
             )}
-            {formatCOP(unitCost)}
           </div>
         </td>
       </tr>
@@ -140,59 +188,99 @@ function APURow({ apu }: { apu: APU }) {
             {apu.components.length === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">Sin componentes registrados.</p>
             ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-left text-[10px] text-muted-foreground">
-                    <th className="py-1.5 pr-3 font-medium">Tipo</th>
-                    <th className="py-1.5 pr-3 font-medium">Recurso</th>
-                    <th className="py-1.5 pr-3 font-medium">Unidad</th>
-                    <th className="py-1.5 pr-3 text-right font-medium">Cantidad</th>
-                    <th className="py-1.5 pr-3 text-right font-medium">Factor desp.</th>
-                    <th className="py-1.5 pr-3 text-right font-medium">Rendim.</th>
-                    <th className="py-1.5 pr-3 text-right font-medium">Costo parcial</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apu.components.map((comp) => {
+              <div className="space-y-3 pt-2">
+                {grouped.map(({ type, comps }) => {
+                  const groupSubtotal = comps.reduce((s, comp) => {
                     const rate = Number(comp.resource?.rates?.[0]?.unitCost ?? 0);
-                    const partial = rate * comp.quantity * (1 + comp.wasteFactor);
-                    const rendimiento = comp.wasteFactor > 0 ? 1 / (1 + comp.wasteFactor) : 1;
-                    return (
-                      <tr key={comp.resourceId} className="border-b border-muted/30">
-                        <td className="py-1.5 pr-3">
-                          <TypeBadge type={comp.resource?.type ?? ('MATERIAL' as ResourceType)} />
-                        </td>
-                        <td className="py-1.5 pr-3">
-                          {comp.resource?.code} — {comp.resource?.name}
-                        </td>
-                        <td className="py-1.5 pr-3 text-center">{comp.resource?.unit}</td>
-                        <td className="py-1.5 pr-3 text-right">
-                          {comp.quantity.toLocaleString('es-CO', { maximumFractionDigits: 4 })}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right">
-                          {(comp.wasteFactor * 100).toFixed(1)}%
-                        </td>
-                        <td className="py-1.5 pr-3 text-right">
-                          {rendimiento.toFixed(4)}
-                        </td>
-                        <td className="py-1.5 pr-3 text-right font-mono">
-                          {formatCOP(partial)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={6} className="py-1.5 pr-3 text-right text-xs font-semibold">
-                      Costo unitario:
-                    </td>
-                    <td className="py-1.5 pr-3 text-right font-mono font-bold text-primary">
-                      {formatCOP(unitCost)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                    const effRate = effectiveRate(rate, type);
+                    return s + effRate * comp.quantity * (1 + comp.wasteFactor);
+                  }, 0);
+
+                  return (
+                    <div key={type}>
+                      {/* Group header */}
+                      <div className={`flex items-center justify-between rounded-t px-2 py-1 text-[10px] font-semibold ${RESOURCE_TYPE_SUBTOTAL_BG[type]}`}>
+                        <span className="flex items-center gap-1.5">
+                          <TypeBadge type={type} />
+                          {type === 'MANO_OBRA' && (
+                            <span className="rounded bg-blue-200 px-1 py-0.5 text-[9px] text-blue-800">
+                              +52% prest.
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-mono">{formatCOP(groupSubtotal)}</span>
+                      </div>
+
+                      {/* Component rows */}
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b text-left text-[10px] text-muted-foreground">
+                            <th className="py-1 pr-3 font-medium">Recurso</th>
+                            <th className="py-1 pr-3 font-medium">Unidad</th>
+                            <th className="py-1 pr-3 text-right font-medium">Cantidad</th>
+                            <th className="py-1 pr-3 text-right font-medium">Desp.%</th>
+                            {type === 'MANO_OBRA' && (
+                              <th className="py-1 pr-3 text-right font-medium">Tarifa efectiva</th>
+                            )}
+                            <th className="py-1 pr-3 text-right font-medium">Costo parcial</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {comps.map((comp) => {
+                            const rate = Number(comp.resource?.rates?.[0]?.unitCost ?? 0);
+                            const effRate = effectiveRate(rate, type);
+                            const prestacionalAmt = type === 'MANO_OBRA' ? rate * FACTOR_PRESTACIONAL : 0;
+                            const partial = effRate * comp.quantity * (1 + comp.wasteFactor);
+
+                            return (
+                              <tr
+                                key={comp.resourceId}
+                                className={`border-b border-muted/30 ${type === 'MANO_OBRA' ? 'bg-blue-50/30' : ''}`}
+                              >
+                                <td className="py-1.5 pr-3">
+                                  {comp.resource?.code} — {comp.resource?.name}
+                                  {type === 'MANO_OBRA' && (
+                                    <div className="mt-0.5 space-y-0.5 text-[10px] text-muted-foreground">
+                                      <div>Tarifa base: {formatCOP(rate)}</div>
+                                      <div className="text-blue-600">
+                                        + Prestacional (52%): {formatCOP(prestacionalAmt)}
+                                      </div>
+                                      <div className="font-semibold text-foreground">
+                                        = Costo efectivo: {formatCOP(effRate)}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-1.5 pr-3 text-center align-top">{comp.resource?.unit}</td>
+                                <td className="py-1.5 pr-3 text-right align-top">
+                                  {comp.quantity.toLocaleString('es-CO', { maximumFractionDigits: 4 })}
+                                </td>
+                                <td className="py-1.5 pr-3 text-right align-top">
+                                  {(comp.wasteFactor * 100).toFixed(1)}%
+                                </td>
+                                {type === 'MANO_OBRA' && (
+                                  <td className="py-1.5 pr-3 text-right align-top font-mono text-blue-700 font-semibold">
+                                    {formatCOP(effRate)}
+                                  </td>
+                                )}
+                                <td className="py-1.5 pr-3 text-right align-top font-mono font-bold">
+                                  {formatCOP(partial)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+
+                {/* Total */}
+                <div className="flex items-center justify-between rounded border bg-muted/40 px-3 py-1.5 text-xs font-bold">
+                  <span>COSTO UNITARIO (con prestacional)</span>
+                  <span className="font-mono text-primary">{formatCOP(unitCost)}</span>
+                </div>
+              </div>
             )}
           </td>
         </tr>
@@ -213,7 +301,12 @@ function APULibraryList() {
   return (
     <Card className="h-fit">
       <CardHeader>
-        <CardTitle className="text-base">Biblioteca APU</CardTitle>
+        <CardTitle className="flex items-center gap-2 text-base">
+          Biblioteca APU
+          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700 font-normal">
+            MO incluye +52% prestacional
+          </span>
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading && <p className="text-sm text-muted-foreground">Cargando APUs…</p>}
@@ -233,8 +326,8 @@ function APULibraryList() {
                   <th className="py-2 pl-3 pr-4 font-medium">Código</th>
                   <th className="py-2 pr-4 font-medium">Nombre</th>
                   <th className="py-2 pr-4 text-center font-medium">Unidad</th>
-                  <th className="py-2 pr-4 text-center font-medium">Componentes</th>
-                  <th className="py-2 pr-3 text-right font-medium">Costo Unit. Calc.</th>
+                  <th className="py-2 pr-4 text-center font-medium">Comp.</th>
+                  <th className="py-2 pr-3 text-right font-medium">Costo Unit. (c/prest.)</th>
                 </tr>
               </thead>
               <tbody>
@@ -269,57 +362,98 @@ function ComponentRowInput({
     items: resources.filter((r) => r.type === type),
   })).filter((g) => g.items.length > 0);
 
+  const selectedRes = resources.find((r) => r.id === row.resourceId);
+  const isMO = selectedRes?.type === 'MANO_OBRA';
+  const baseRate = selectedRes ? Number(selectedRes.rates?.[0]?.unitCost ?? 0) : 0;
+  const effRate = isMO ? baseRate * (1 + FACTOR_PRESTACIONAL) : baseRate;
+
+  // When rendimiento changes, auto-compute quantity = 1 / rendimiento
+  function handleRendimientoChange(val: string) {
+    const rend = Number(val);
+    const newQty = rend > 0 ? String((1 / rend).toFixed(6)) : row.quantity;
+    onChange(index, { ...row, rendimiento: val, quantity: newQty });
+  }
+
   return (
-    <div className="flex items-center gap-2">
-      {/* Resource select grouped by type */}
-      <Select
-        value={row.resourceId}
-        onChange={(e) => onChange(index, { ...row, resourceId: e.target.value })}
-        className="h-8 min-w-0 flex-1 text-xs"
-      >
-        <option value="">— Selecciona recurso —</option>
-        {grouped.map((group) => (
-          <optgroup key={group.type} label={RESOURCE_TYPE_LABEL[group.type]}>
-            {group.items.map((res) => (
-              <option key={res.id} value={res.id}>
-                [{res.code}] {res.name} ({res.unit})
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </Select>
+    <div className={`space-y-1 rounded-md p-2 ${isMO ? 'bg-blue-50 border border-blue-100' : 'border border-muted/40'}`}>
+      {isMO && (
+        <div className="flex items-center gap-1 text-[10px] text-blue-700">
+          <Info className="h-3 w-3" />
+          Incluye +52% prestacional (tarifa efectiva: {formatCOP(effRate)}/u)
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        {/* Resource select grouped by type */}
+        <Select
+          value={row.resourceId}
+          onChange={(e) => onChange(index, { ...row, resourceId: e.target.value, rendimiento: '' })}
+          className="h-8 min-w-0 flex-1 text-xs"
+        >
+          <option value="">— Selecciona recurso —</option>
+          {grouped.map((group) => (
+            <optgroup key={group.type} label={RESOURCE_TYPE_LABEL[group.type]}>
+              {group.items.map((res) => (
+                <option key={res.id} value={res.id}>
+                  [{res.code}] {res.name} ({res.unit})
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </Select>
 
-      {/* Quantity */}
-      <Input
-        type="number"
-        placeholder="Cantidad"
-        value={row.quantity}
-        onChange={(e) => onChange(index, { ...row, quantity: e.target.value })}
-        className="h-8 w-24 text-xs"
-        min="0"
-        step="any"
-      />
+        {/* Rendimiento */}
+        <div className="flex flex-col items-center">
+          <span className="text-[9px] text-muted-foreground">Rendim.</span>
+          <Input
+            type="number"
+            placeholder="u/hr"
+            value={row.rendimiento}
+            onChange={(e) => handleRendimientoChange(e.target.value)}
+            className="h-8 w-20 text-xs"
+            min="0"
+            step="any"
+            title="Rendimiento: unidades de trabajo por unidad de tiempo. Calcula cantidad = 1/rendimiento."
+          />
+        </div>
 
-      {/* Waste factor % */}
-      <Input
-        type="number"
-        placeholder="Desp. %"
-        value={row.wasteFactor}
-        onChange={(e) => onChange(index, { ...row, wasteFactor: e.target.value })}
-        className="h-8 w-20 text-xs"
-        min="0"
-        max="100"
-        step="any"
-      />
+        {/* Quantity */}
+        <div className="flex flex-col items-center">
+          <span className="text-[9px] text-muted-foreground">Cantidad</span>
+          <Input
+            type="number"
+            placeholder="Cant."
+            value={row.quantity}
+            onChange={(e) => onChange(index, { ...row, quantity: e.target.value })}
+            className="h-8 w-24 text-xs"
+            min="0"
+            step="any"
+          />
+        </div>
 
-      <button
-        type="button"
-        onClick={() => onRemove(index)}
-        className="shrink-0 rounded p-1 text-destructive hover:bg-destructive/10 transition-colors"
-        title="Eliminar componente"
-      >
-        ✕
-      </button>
+        {/* Waste factor % */}
+        <div className="flex flex-col items-center">
+          <span className="text-[9px] text-muted-foreground">Desp.%</span>
+          <Input
+            type="number"
+            placeholder="Desp.%"
+            value={row.wasteFactor}
+            onChange={(e) => onChange(index, { ...row, wasteFactor: e.target.value })}
+            className="h-8 w-20 text-xs"
+            min="0"
+            max="100"
+            step="any"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onRemove(index)}
+          className="shrink-0 rounded p-1 text-destructive hover:bg-destructive/10 transition-colors mt-3"
+          title="Eliminar componente"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
@@ -334,7 +468,7 @@ function NewAPUForm() {
   const [unit, setUnit] = useState<string>('m2');
   const [isLibrary, setIsLibrary] = useState(true);
   const [components, setComponents] = useState<ComponentRow[]>([
-    { resourceId: '', quantity: '', wasteFactor: '' },
+    { resourceId: '', quantity: '', wasteFactor: '', rendimiento: '' },
   ]);
 
   const { data: resourcesData } = useQuery({
@@ -357,6 +491,7 @@ function NewAPUForm() {
             resourceId: c.resourceId,
             quantity: String(c.quantity),
             wasteFactor: String((Number(c.wasteFactor) || 0) / 100),
+            performance: c.rendimiento && Number(c.rendimiento) > 0 ? String(Number(c.rendimiento)) : undefined,
           })),
       }),
     onSuccess: () => {
@@ -365,7 +500,7 @@ function NewAPUForm() {
       setName('');
       setUnit('m2');
       setIsLibrary(true);
-      setComponents([{ resourceId: '', quantity: '', wasteFactor: '' }]);
+      setComponents([{ resourceId: '', quantity: '', wasteFactor: '', rendimiento: '' }]);
     },
   });
 
@@ -378,7 +513,7 @@ function NewAPUForm() {
   }
 
   function addComponent() {
-    setComponents((prev) => [...prev, { resourceId: '', quantity: '', wasteFactor: '' }]);
+    setComponents((prev) => [...prev, { resourceId: '', quantity: '', wasteFactor: '', rendimiento: '' }]);
   }
 
   const validComponents = components.filter((c) => c.resourceId && c.quantity && Number(c.quantity) > 0);
@@ -389,6 +524,23 @@ function NewAPUForm() {
     !mutation.isPending;
 
   const previewCost = calcPreviewCost(components, resources);
+
+  // Preview breakdown by type
+  const previewBreakdown = { mo: 0, material: 0, equipo: 0, subcontrato: 0 };
+  for (const row of components) {
+    if (!row.resourceId) continue;
+    const res = resources.find((r) => r.id === row.resourceId);
+    if (!res) continue;
+    const rate = Number(res.rates?.[0]?.unitCost ?? 0);
+    const effRate = effectiveRate(rate, res.type);
+    const qty = Number(row.quantity) || 0;
+    const wf = (Number(row.wasteFactor) || 0) / 100;
+    const cost = effRate * qty * (1 + wf);
+    if (res.type === 'MANO_OBRA') previewBreakdown.mo += cost;
+    else if (res.type === 'MATERIAL') previewBreakdown.material += cost;
+    else if (res.type === 'EQUIPO') previewBreakdown.equipo += cost;
+    else previewBreakdown.subcontrato += cost;
+  }
 
   return (
     <Card className="h-fit">
@@ -448,7 +600,12 @@ function NewAPUForm() {
 
         {/* Components */}
         <div className="space-y-2">
-          <Label className="text-xs font-semibold">Componentes del APU</Label>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs font-semibold">Componentes del APU</Label>
+            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[9px] text-blue-700">
+              MO aplica ×1.52 prestacional
+            </span>
+          </div>
           {resources.length === 0 && (
             <p className="text-xs text-muted-foreground">
               No hay recursos disponibles.{' '}
@@ -479,13 +636,29 @@ function NewAPUForm() {
         </div>
 
         {/* Cost preview */}
-        <div className="rounded-md border bg-muted/30 px-3 py-2">
+        <div className="rounded-md border bg-muted/30 px-3 py-2 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="text-muted-foreground">Costo unitario calculado:</span>
             <span className="font-mono font-bold text-primary">{formatCOP(previewCost)}</span>
           </div>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Σ (tasa recurso × cantidad × (1 + desp./100))
+          {previewCost > 0 && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+              {previewBreakdown.mo > 0 && (
+                <span className="text-blue-600">MO (c/prest.): {formatCOP(previewBreakdown.mo)}</span>
+              )}
+              {previewBreakdown.material > 0 && (
+                <span>Material: {formatCOP(previewBreakdown.material)}</span>
+              )}
+              {previewBreakdown.equipo > 0 && (
+                <span>Equipo: {formatCOP(previewBreakdown.equipo)}</span>
+              )}
+              {previewBreakdown.subcontrato > 0 && (
+                <span>Subcontrato: {formatCOP(previewBreakdown.subcontrato)}</span>
+              )}
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground">
+            MO: tasa × 1.52 × cantidad × (1 + desp./100)
           </p>
         </div>
 
@@ -528,6 +701,7 @@ export default function APULibraryPage({ params }: { params: { id: string } }) {
           <h1 className="text-2xl font-bold tracking-tight">Biblioteca APU</h1>
           <p className="text-sm text-muted-foreground">
             Análisis de Precios Unitarios — gestión de componentes y costos unitarios.
+            Mano de obra incluye factor prestacional del <strong>52%</strong> (multiplier ×1.52) según normativa colombiana.
           </p>
         </div>
       </header>

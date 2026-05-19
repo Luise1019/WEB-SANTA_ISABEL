@@ -59,9 +59,21 @@ export class ResourceController {
     return this.budget.addResourceRate(resourceId, dto.unitCost);
   }
 
+  @Post('resources/seed-colombian')
+  @Roles('GERENTE')
+  @Audit({ action: 'CREATE', entityType: 'Resource' })
+  seedColombianResources() {
+    return this.budget.seedColombianResources();
+  }
+
   @Get('apus')
   listAPUs() {
     return this.budget.listAPUs();
+  }
+
+  @Get('apus/:apuId/breakdown')
+  getAPUBreakdown(@Param('apuId', ParseUUIDPipe) apuId: string) {
+    return this.budget.getAPUCostBreakdown(apuId);
   }
 
   @Post('apus')
@@ -86,6 +98,16 @@ export class BudgetController {
   @Get('chapters')
   listChapters(@Param('projectId', ParseUUIDPipe) projectId: string) {
     return this.budget.listChapters(projectId);
+  }
+
+  @Post('chapters')
+  @Roles('GERENTE')
+  @Audit({ action: 'CREATE', entityType: 'Chapter' })
+  createChapter(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body(new ZodValidationPipe(ChapterInputSchema)) dto: ChapterInput,
+  ) {
+    return this.budget.createChapter(projectId, dto);
   }
 
   @Post('chapters/:chapterId/subchapters')
@@ -149,5 +171,20 @@ export class BudgetController {
     @Body(new ZodValidationPipe(AIUConfigInputSchema)) dto: AIUConfigInput,
   ) {
     return this.budget.upsertAIU(projectId, dto);
+  }
+
+  @Get('control')
+  getBudgetControl(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    return this.budget.getBudgetControl(projectId);
+  }
+
+  @Patch('items/:itemId/actuals')
+  @Roles('GERENTE')
+  @Audit({ action: 'UPDATE', entityType: 'BudgetItem', entityIdParam: 'itemId' })
+  updateActuals(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: { committedCost?: string; actualCost?: string },
+  ) {
+    return this.budget.updateItemActuals(itemId, dto);
   }
 }

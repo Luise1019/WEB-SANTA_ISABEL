@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { MoneySchema, PositiveMoneySchema } from '../types/money';
 
-export const UnitKindSchema = z.enum(['APARTAMENTO', 'CASA', 'LOCAL', 'PARQUEADERO', 'DEPOSITO']);
+export const UnitKindSchema = z.enum(['APARTAMENTO', 'CASA', 'OFICINA', 'LOCAL', 'PARQUEADERO', 'DEPOSITO', 'BODEGA']);
 export type UnitKind = z.infer<typeof UnitKindSchema>;
 
 export const UnitStatusSchema = z.enum([
@@ -38,6 +38,20 @@ export const SaleInputSchema = z.object({
   expectedScriptureDate: z.coerce.date().optional(),
 });
 export type SaleInput = z.infer<typeof SaleInputSchema>;
+
+export const PriceListInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().max(500).nullable().optional(),
+  isBase: z.boolean().optional(),
+});
+export type PriceListInput = z.infer<typeof PriceListInputSchema>;
+
+export const PriceListItemInputSchema = z.object({
+  unitId: z.string().uuid(),
+  price: z.string().regex(/^\d+(\.\d{1,2})?$/),
+});
+export type PriceListItemInput = z.infer<typeof PriceListItemInputSchema>;
 
 export const PaymentScheduleItemInputSchema = z.object({
   saleId: z.string().uuid(),

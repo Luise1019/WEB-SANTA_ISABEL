@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 
+import { ModuleHeader } from '@/components/module-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -174,18 +175,17 @@ export default function ChangesPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Órdenes de Cambio</h1>
-          <p className="text-muted-foreground">
-            Control de cambios con impacto en costo y cronograma.
-          </p>
-        </div>
-        <Button onClick={() => setShowForm((v) => !v)}>
-          <Plus className="mr-1 h-4 w-4" />
-          {showForm ? 'Cancelar' : 'Nueva OC'}
-        </Button>
-      </header>
+      <ModuleHeader
+        title="Órdenes de Cambio"
+        description="Control de modificaciones al alcance · Impacto en costo y cronograma · Línea base presupuestal"
+        infoText="Las órdenes de cambio (OC) documentan cualquier modificación al alcance original del proyecto. Flujo: Borrador → En revisión → Aprobada/Rechazada → Aplicada. Al aprobar una OC se genera una nueva versión de la línea base del presupuesto."
+        actions={
+          <Button onClick={() => setShowForm((v) => !v)}>
+            <Plus className="mr-1 h-4 w-4" />
+            {showForm ? 'Cancelar' : 'Nueva OC'}
+          </Button>
+        }
+      />
 
       {showForm && <NewOCForm projectId={projectId} onDone={() => setShowForm(false)} />}
 

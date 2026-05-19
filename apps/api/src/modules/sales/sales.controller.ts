@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -58,7 +59,14 @@ export class SalesController {
     dto: {
       towerId?: string | null;
       code: string;
-      kind: 'APARTAMENTO' | 'CASA' | 'LOCAL' | 'PARQUEADERO' | 'DEPOSITO';
+      kind:
+        | 'APARTAMENTO'
+        | 'CASA'
+        | 'OFICINA'
+        | 'LOCAL'
+        | 'PARQUEADERO'
+        | 'DEPOSITO'
+        | 'BODEGA';
       floor?: number | null;
       privateAreaM2: string;
       commonAreaM2?: string;
@@ -121,5 +129,47 @@ export class SalesController {
   @Audit({ action: 'DELETE', entityType: 'Sale', entityIdParam: 'saleId' })
   cancelSale(@Param('saleId', ParseUUIDPipe) saleId: string) {
     return this.sales.cancelSale(saleId);
+  }
+
+  // ── Price Lists ──────────────────────────────────────────────
+  @Get('price-lists')
+  listPriceLists(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    return this.sales.listPriceLists(projectId);
+  }
+
+  @Post('price-lists')
+  @Roles('GERENTE')
+  @Audit({ action: 'CREATE', entityType: 'PriceList' })
+  createPriceList(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body()
+    dto: {
+      name: string;
+      effectiveDate: string;
+      notes?: string | null;
+      isBase?: boolean;
+    },
+  ) {
+    return this.sales.createPriceList(projectId, dto);
+  }
+
+  @Put('price-lists/:priceListId/items')
+  @Roles('GERENTE')
+  @Audit({ action: 'UPDATE', entityType: 'PriceListItem', entityIdParam: 'priceListId' })
+  setPriceListItems(
+    @Param('priceListId', ParseUUIDPipe) priceListId: string,
+    @Body() dto: { items: Array<{ unitId: string; price: string }> },
+  ) {
+    return this.sales.setPriceListItems(priceListId, dto.items);
+  }
+
+  @Get('price-evolution')
+  getPriceEvolution(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    return this.sales.getPriceEvolution(projectId);
+  }
+
+  @Get('dashboard')
+  getSalesDashboard(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    return this.sales.getSalesDashboard(projectId);
   }
 }

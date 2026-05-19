@@ -133,6 +133,11 @@ export const api = {
     request<Record<string, unknown>>(`/projects/${projectId}/budget/summary`),
   listChapters: (projectId: string) =>
     request<Array<Record<string, unknown>>>(`/projects/${projectId}/budget/chapters`),
+  createChapter: (projectId: string, input: ChapterInput) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/chapters`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   createSubchapter: (projectId: string, chapterId: string, input: ChapterInput) =>
     request<Record<string, unknown>>(
       `/projects/${projectId}/budget/chapters/${chapterId}/subchapters`,
@@ -160,6 +165,13 @@ export const api = {
     request<Record<string, unknown>>(`/projects/${projectId}/budget/aiu`, {
       method: 'PATCH',
       body: JSON.stringify(input),
+    }),
+  getBudgetControl: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/control`),
+  updateItemActuals: (projectId: string, itemId: string, dto: { committedCost?: string; actualCost?: string }) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/budget/items/${itemId}/actuals`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
     }),
 
   // Schedule
@@ -204,6 +216,51 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  deleteDependency: (projectId: string, dependencyId: string) =>
+    request<void>(`/projects/${projectId}/schedule/dependencies/${dependencyId}`, { method: 'DELETE' }),
+
+  // Schedule — Santa Isabel template + extras
+  seedSantaIsabelSchedule: (projectId: string) =>
+    request<{ message: string; tasksCreated: number; depsCreated: number }>(
+      `/projects/${projectId}/schedule/seed-santa-isabel`,
+      { method: 'POST', body: '{}' },
+    ),
+  clearSchedule: (projectId: string) =>
+    request<{ deleted: boolean }>(`/projects/${projectId}/schedule/clear`, { method: 'DELETE' }),
+
+  // Schedule — Milestones
+  listMilestones: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/schedule/milestones`),
+  createMilestone: (
+    projectId: string,
+    input: { code: string; name: string; plannedDate: string; isContractual?: boolean },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/milestones`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateMilestone: (projectId: string, milestoneId: string, input: Record<string, unknown>) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/schedule/milestones/${milestoneId}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    ),
+  deleteMilestone: (projectId: string, milestoneId: string) =>
+    request<void>(`/projects/${projectId}/schedule/milestones/${milestoneId}`, { method: 'DELETE' }),
+
+  // Schedule — Baselines
+  listScheduleBaselines: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/schedule/baselines`),
+  createScheduleBaseline: (projectId: string, label: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/schedule/baselines`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+
+  // Schedule — Export (returns raw Response for download)
+  exportScheduleExcel: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/schedule/export/excel`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
 
   // Sales
   getSalesSummary: (projectId: string) =>
@@ -232,6 +289,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  listPriceLists: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/sales/price-lists`),
+  createPriceList: (
+    projectId: string,
+    input: { name: string; effectiveDate: string; notes?: string | null; isBase?: boolean },
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/price-lists`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  setPriceListItems: (
+    projectId: string,
+    priceListId: string,
+    items: Array<{ unitId: string; price: string }>,
+  ) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/sales/price-lists/${priceListId}/items`,
+      { method: 'PUT', body: JSON.stringify({ items }) },
+    ),
+  getPriceEvolution: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/projects/${projectId}/sales/price-evolution`),
+  getSalesDashboard: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/sales/dashboard`),
 
   // Cash Flow
   getCashFlowSummary: (projectId: string) =>
@@ -330,11 +410,118 @@ export const api = {
     request<Record<string, unknown>>(`/projects/${projectId}/dashboard/summary`),
 
   // Resources & APUs (global)
+  // ── Feasibility / Prefactibilidad ─────────────────────────
+  getFeasibility: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/feasibility`),
+  updateFeasibility: (
+    projectId: string,
+    input: Record<string, unknown>,
+  ) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/feasibility`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  replaceFeasibilityCostItems: (
+    projectId: string,
+    items: Array<Record<string, unknown>>,
+  ) =>
+    request<Array<Record<string, unknown>>>(
+      `/projects/${projectId}/feasibility/cost-items`,
+      { method: 'PUT', body: JSON.stringify(items) },
+    ),
+  replaceFeasibilityCashFlow: (
+    projectId: string,
+    rows: Array<Record<string, unknown>>,
+  ) =>
+    request<Array<Record<string, unknown>>>(
+      `/projects/${projectId}/feasibility/cashflow`,
+      { method: 'PUT', body: JSON.stringify(rows) },
+    ),
+  recalculateFeasibility: (projectId: string) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/feasibility/recalculate`,
+      { method: 'POST' },
+    ),
+  createFeasibilityScenario: (
+    projectId: string,
+    input: {
+      name: string;
+      priceVariationPct: string;
+      costVariationPct: string;
+      salesVelocityVariationPct: string;
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/feasibility/scenarios`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
+  deleteFeasibilityScenario: (projectId: string, scenarioId: string) =>
+    request<void>(
+      `/projects/${projectId}/feasibility/scenarios/${scenarioId}`,
+      { method: 'DELETE' },
+    ),
+  // Importador Santa Isabel (multipart upload)
+  importSantaIsabelPreview: async (projectId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const accessToken = auth?.getAccessToken() ?? null;
+    const res = await fetch(
+      `${API_URL}/projects/${projectId}/imports/santa-isabel/preview`,
+      {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+        body: formData,
+      },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body.message ?? res.statusText, body);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  importSantaIsabelCommit: (
+    projectId: string,
+    preview: Record<string, unknown>,
+  ) =>
+    request<Record<string, unknown>>(
+      `/projects/${projectId}/imports/santa-isabel/commit`,
+      { method: 'POST', body: JSON.stringify({ preview }) },
+    ),
+
+  // Reports / Export (retornan Response crudo — son descargas de archivo)
+  exportBudgetCsv: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/reports/budget.csv`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
+  exportCashflowCsv: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/reports/cashflow.csv`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
+
+  exportHtmlReport: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/reports/presentation.html`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
+
+  exportBudgetHtml: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/reports/budget.html`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
+
+  exportScheduleHtml: (projectId: string): Promise<Response> =>
+    fetch(`${API_URL}/projects/${projectId}/reports/schedule.html`, {
+      headers: { Authorization: `Bearer ${auth?.getAccessToken() ?? ''}` },
+    }),
+
   listResources: () => request<Array<Record<string, unknown>>>('/budget/resources'),
   createResource: (input: ResourceInput) =>
     request<Record<string, unknown>>('/budget/resources', {
       method: 'POST',
       body: JSON.stringify(input),
+    }),
+  seedColombianResources: () =>
+    request<{ created: number; updated: number; total: number }>('/budget/resources/seed-colombian', {
+      method: 'POST',
     }),
   addResourceRate: (resourceId: string, unitCost: string) =>
     request<Record<string, unknown>>(`/budget/resources/${resourceId}/rates`, {
@@ -347,4 +534,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  getAPUBreakdown: (apuId: string) =>
+    request<Record<string, unknown>>(`/budget/apus/${apuId}/breakdown`),
+
+  // ── Logbook ──────────────────────────────────────────────────────────────
+  listLogbook: (projectId: string, params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<Record<string, unknown>>(`/projects/${projectId}/logbook${qs}`);
+  },
+  getLogbookStats: (projectId: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/logbook/stats`),
+  getLogbookEntry: (projectId: string, id: string) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/logbook/${id}`),
+  createLogbookEntry: (projectId: string, body: unknown) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/logbook`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateLogbookEntry: (projectId: string, id: string, body: unknown) =>
+    request<Record<string, unknown>>(`/projects/${projectId}/logbook/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  deleteLogbookEntry: (projectId: string, id: string) =>
+    request<{ ok: boolean }>(`/projects/${projectId}/logbook/${id}`, { method: 'DELETE' }),
 };
