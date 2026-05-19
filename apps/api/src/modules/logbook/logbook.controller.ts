@@ -8,7 +8,7 @@ import {
 } from './logbook.dto';
 
 @UseGuards(AuthGuard('jwt'))
-@Controller('api/v1/projects/:projectId/logbook')
+@Controller('projects/:projectId/logbook')
 export class LogbookController {
   constructor(private readonly svc: LogbookService) {}
 
