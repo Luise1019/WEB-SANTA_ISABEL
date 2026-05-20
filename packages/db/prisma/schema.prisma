@@ -276,6 +276,7 @@ model BudgetItem {
   costType       CostType? @default(MATERIAL)
   customCategory String?
   order          Int       @default(0)
+  formulaExpr    String?   // optional math expression for unitCost, e.g. "500 * 1.15 + 200"
   // Control presupuestal
   committedCost  Decimal   @default(0) @db.Decimal(18, 2)
   actualCost     Decimal   @default(0) @db.Decimal(18, 2)

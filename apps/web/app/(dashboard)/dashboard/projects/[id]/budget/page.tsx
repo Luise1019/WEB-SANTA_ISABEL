@@ -1106,6 +1106,12 @@ export default function BudgetPage({ params }: { params: { id: string } }) {
                 Recursos
               </Link>
             </Button>
+            <Button variant="outline" asChild className="border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+              <Link href={`/dashboard/projects/${projectId}/feasibility/import`}>
+                <Download className="mr-1 h-4 w-4" />
+                Importar Excel
+              </Link>
+            </Button>
             {activeTab === 'presupuesto' && (
               <>
                 <ReportHtmlButton

@@ -9,6 +9,15 @@ build/
 out/
 *.tsbuildinfo
 
+# next-pwa generated files
+apps/web/public/sw.js
+apps/web/public/sw.js.map
+apps/web/public/workbox-*.js
+apps/web/public/workbox-*.js.map
+apps/web/public/worker-*.js
+apps/web/public/worker-*.js.map
+apps/web/public/fallback-*.js
+
 # Turbo
 .turbo/
 
