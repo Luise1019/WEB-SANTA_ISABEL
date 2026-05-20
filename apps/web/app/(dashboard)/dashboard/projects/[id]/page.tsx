@@ -2,8 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   ArrowRight,
   BarChart3,
+  BookOpen,
   Calendar,
   CheckCircle2,
   Clock,
@@ -11,6 +13,7 @@ import {
   FileText,
   LineChart,
   MapPin,
+  ShieldCheck,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -62,6 +65,17 @@ const modules: Array<{
   borderColor: string;
   iconBg: string;
 }> = [
+  {
+    href: 'dashboard',
+    icon: BarChart3,
+    title: 'Dashboard',
+    description: 'Vista ejecutiva con KPIs, alertas y curva S del proyecto',
+    badge: 'KPIs ejecutivos · Alertas · Curva S',
+    color: 'text-indigo-700',
+    bgGradient: 'from-indigo-50 to-blue-50',
+    borderColor: 'border-indigo-200',
+    iconBg: 'bg-indigo-100 text-indigo-700',
+  },
   {
     href: 'feasibility',
     icon: LineChart,
@@ -118,6 +132,17 @@ const modules: Array<{
     iconBg: 'bg-purple-100 text-purple-700',
   },
   {
+    href: 'logbook',
+    icon: BookOpen,
+    title: 'Bitácora',
+    description: 'Registro diario de obra, personal, materiales y avances',
+    badge: 'Entradas · Fotos · Personal · Equipo',
+    color: 'text-sky-700',
+    bgGradient: 'from-sky-50 to-blue-50',
+    borderColor: 'border-sky-200',
+    iconBg: 'bg-sky-100 text-sky-700',
+  },
+  {
     href: 'changes',
     icon: FileText,
     title: 'Cambios',
@@ -129,17 +154,53 @@ const modules: Array<{
     iconBg: 'bg-red-100 text-red-700',
   },
   {
-    href: 'dashboard',
+    href: 'quality',
+    icon: AlertTriangle,
+    title: 'Calidad',
+    description: 'Gestión de no conformidades y acciones correctivas',
+    badge: 'No conformidades · Acciones · Cierre',
+    color: 'text-amber-700',
+    bgGradient: 'from-amber-50 to-yellow-50',
+    borderColor: 'border-amber-200',
+    iconBg: 'bg-amber-100 text-amber-700',
+  },
+  {
+    href: 'safety',
+    icon: ShieldCheck,
+    title: 'SST',
+    description: 'Seguridad y salud en el trabajo, reportes de incidentes',
+    badge: 'Reportes SST · Inspecciones · COPASST',
+    color: 'text-emerald-700',
+    bgGradient: 'from-emerald-50 to-green-50',
+    borderColor: 'border-emerald-200',
+    iconBg: 'bg-emerald-100 text-emerald-700',
+  },
+  {
+    href: 'reports',
     icon: BarChart3,
-    title: 'Dashboard',
-    description: 'Vista ejecutiva con indicadores de desempeño',
-    badge: 'KPIs ejecutivos · Alertas · SPI/CPI',
-    color: 'text-indigo-700',
-    bgGradient: 'from-indigo-50 to-blue-50',
-    borderColor: 'border-indigo-200',
-    iconBg: 'bg-indigo-100 text-indigo-700',
+    title: 'Reportes',
+    description: 'Generación de informes ejecutivos en PDF',
+    badge: 'PDF ejecutivo · Exportar · Compartir',
+    color: 'text-slate-700',
+    bgGradient: 'from-slate-50 to-gray-50',
+    borderColor: 'border-slate-200',
+    iconBg: 'bg-slate-100 text-slate-700',
   },
 ];
+
+type MiniKpi = {
+  kpis: {
+    presupuesto: { directCost: string; executedPct: string };
+    ventas: { unitsSold: number; totalUnits: number; margenPct: string };
+    cronograma: { avgProgress: number };
+    caja: { saldoNeto: string };
+  };
+  alerts: Array<{ type: 'warning' | 'danger' | 'info'; message: string }>;
+};
+
+function formatCOP(v: string | number) {
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', notation: 'compact', maximumFractionDigits: 1 }).format(Number(v));
+}
 
 export default function ProjectDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -148,8 +209,14 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
     queryKey: ['project', id],
     queryFn: () => api.getProject(id),
   });
+  const { data: kpiRaw } = useQuery({
+    queryKey: ['dashboard', id],
+    queryFn: () => api.getDashboardSummary(id),
+    staleTime: 60_000,
+  });
 
   const project = data as unknown as Project | undefined;
+  const kpiData = kpiRaw as unknown as MiniKpi | undefined;
   const statusCfg = project
     ? (STATUS_CONFIG[project.status] ?? { label: project.status, color: 'bg-gray-100 text-gray-700' })
     : null;
@@ -228,6 +295,76 @@ export default function ProjectDetailPage({ params }: { params: { id: string } }
           </Button>
         </div>
       </div>
+
+      {/* ── Mini KPI strip ── */}
+      {kpiData && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            {
+              label: 'Costo directo',
+              value: formatCOP(kpiData.kpis.presupuesto.directCost),
+              sub: `${kpiData.kpis.presupuesto.executedPct}% ejecutado`,
+              color: 'border-l-blue-500',
+              iconBg: 'bg-blue-50',
+              icon: <DollarSign className="h-4 w-4 text-blue-600" />,
+            },
+            {
+              label: 'Avance cronograma',
+              value: `${kpiData.kpis.cronograma.avgProgress}%`,
+              sub: 'progreso promedio',
+              color: Number(kpiData.kpis.cronograma.avgProgress) < 30
+                ? 'border-l-amber-500' : 'border-l-green-500',
+              iconBg: 'bg-green-50',
+              icon: <Calendar className="h-4 w-4 text-green-600" />,
+            },
+            {
+              label: 'Unidades vendidas',
+              value: `${kpiData.kpis.ventas.unitsSold} / ${kpiData.kpis.ventas.totalUnits}`,
+              sub: `Margen ${kpiData.kpis.ventas.margenPct}%`,
+              color: 'border-l-purple-500',
+              iconBg: 'bg-purple-50',
+              icon: <Users className="h-4 w-4 text-purple-600" />,
+            },
+            {
+              label: 'Saldo neto caja',
+              value: formatCOP(kpiData.kpis.caja.saldoNeto),
+              sub: Number(kpiData.kpis.caja.saldoNeto) >= 0 ? 'Positivo ✓' : 'Negativo ⚠',
+              color: Number(kpiData.kpis.caja.saldoNeto) >= 0
+                ? 'border-l-emerald-500' : 'border-l-red-500',
+              iconBg: 'bg-orange-50',
+              icon: <TrendingUp className="h-4 w-4 text-orange-600" />,
+            },
+          ].map(({ label, value, sub, color, iconBg, icon }) => (
+            <div key={label} className={`flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm border-l-4 ${color}`}>
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>{icon}</div>
+              <div className="min-w-0">
+                <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+                <p className="text-lg font-bold text-slate-900 leading-tight">{value}</p>
+                <p className="text-[11px] text-muted-foreground">{sub}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Alerts ── */}
+      {kpiData && kpiData.alerts.length > 0 && (
+        <div className="space-y-1.5">
+          {kpiData.alerts.map((a, i) => {
+            const styles = {
+              warning: 'bg-amber-50 border-amber-200 text-amber-800',
+              danger:  'bg-red-50 border-red-200 text-red-800',
+              info:    'bg-blue-50 border-blue-200 text-blue-800',
+            } as const;
+            return (
+              <div key={i} className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-xs ${styles[a.type]}`}>
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {a.message}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Module grid ── */}
       <div>

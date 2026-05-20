@@ -586,18 +586,22 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
   let total = 0;
 
   // Detect column positions from header row
-  let descCol = 1, unitCol = 2, qtyCol = 3, ucCol = 4, totalCol = 5;
+  let codeCol = 0, descCol = 1, unitCol = 2, qtyCol = 3, ucCol = 4, totalCol = 5;
   for (let r = 0; r < Math.min(matrix.length, 30); r++) {
     const row = matrix[r];
     if (!row) continue;
     const norm = row.map((c) => normalize(c));
     const dIdx = norm.findIndex((c) => /descripci|item|actividad/.test(c));
-    const uIdx = norm.findIndex((c) => /^und$|^unidad$|^un\.?$|^unds?$/.test(c));
+    // Fix: accept "UNID." → "unid." in addition to existing patterns
+    const uIdx = norm.findIndex((c) => /^und$|^unidad$|^un\.?$|^unds?$|^unid\.?$/.test(c));
     const qIdx = norm.findIndex((c) => /^cantidad$|^cant\.?$/.test(c));
-    const ucIdx = norm.findIndex((c) => /(valor|precio|vr\.?)\s*unitar/.test(c));
+    // Fix: accept "VR. UNIT." → "vr. unit." (remove requirement for "ar" suffix)
+    const ucIdx = norm.findIndex((c) => /(valor|precio|vr\.?)\s*unit/.test(c));
     const tIdx = norm.findIndex((c) => /(valor|vr\.?)\s*(total|parcial)/.test(c));
     if (dIdx !== -1 && qIdx !== -1 && ucIdx !== -1) {
       descCol = dIdx;
+      // Fix: code column is typically just before description
+      codeCol = Math.max(0, dIdx - 1);
       if (uIdx !== -1) unitCol = uIdx;
       qtyCol = qIdx;
       ucCol = ucIdx;
@@ -609,7 +613,8 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
   for (const row of matrix) {
     if (!row || row.every((c) => c === null || c === undefined || String(c).trim() === '')) continue;
 
-    const codeRaw = row[0];
+    // Fix: read code from detected column (not hardcoded col 0)
+    const codeRaw = row[codeCol];
     const code = codeRaw === null || codeRaw === undefined ? '' : String(codeRaw).trim();
     const descRaw = row[descCol];
     const desc = descRaw === null || descRaw === undefined ? '' : String(descRaw).trim();
@@ -617,7 +622,6 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
     const qty = toNumber(row[qtyCol]);
     const uc = toNumber(row[ucCol]);
     const rowTotal = toNumber(row[totalCol]);
-    const numericCells = row.filter((c) => isNumeric(c)).length;
 
     // Item row: has qty AND unit cost
     if (qty !== null && uc !== null && desc) {
@@ -645,18 +649,25 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
       continue;
     }
 
-    // Chapter / subchapter: textual row with no/few numerics
-    if (desc && numericCells === 0) {
-      const isSubcode = /^\d+\.\d+/.test(code);
-      const isChapterHeader =
-        /^cap(\.|itulo)?\s*[ivx\d]+/i.test(desc) ||
-        /^[IVX]+$/.test(code) ||
-        (code.length <= 4 && desc === desc.toUpperCase() && desc.length > 3);
+    // Chapter / subchapter: row that didn't qualify as an item
+    // (qty===null || uc===null guaranteed here since item block already `continue`d)
+    if (desc) {
+      // Fix: use proper Roman numeral detection (I, II, III, IV, V, VI…)
+      // Regex validates the MDCLXVI character set; a valid Roman numeral won't contain B/A/D/etc.
+      const romanRegex = /^M{0,4}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$/i;
+      const isRoman = code.length > 0 && romanRegex.test(code);
 
-      if (isSubcode && currentChapter) {
-        currentSub = { code: code.slice(0, 20), name: desc.slice(0, 200), items: [] };
-        currentChapter.subchapters.push(currentSub);
-      } else if (isChapterHeader) {
+      // Fix: letter (optionally followed by digits) → subchapter (A1, B, B7, D6)
+      // Must NOT be a pure Roman numeral (e.g., "I" would match /^[A-Z]$/ but is Roman)
+      const isAlphaNum = /^[A-Z][0-9]*$/i.test(code) && code.length > 0 && !isRoman;
+
+      // Legacy dotted numeric subchapter code (1.1, 2.3)
+      const isSubcode = /^\d+\.\d+/.test(code);
+
+      // Description starts with "capítulo" keyword
+      const isChapterDesc = /^cap(\.|itulo)?\s*[ivx\d]+/i.test(desc);
+
+      if (isRoman || isChapterDesc) {
         currentChapter = {
           code: (code || `CAP-${chapters.length + 1}`).slice(0, 20),
           name: desc.slice(0, 200),
@@ -664,6 +675,13 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
         };
         chapters.push(currentChapter);
         currentSub = null;
+      } else if ((isAlphaNum || isSubcode) && currentChapter) {
+        currentSub = { code: code.slice(0, 20), name: desc.slice(0, 200), items: [] };
+        currentChapter.subchapters.push(currentSub);
+      } else if (code && currentChapter) {
+        // Any other coded row (e.g. numeric "1","2") under a chapter → subchapter
+        currentSub = { code: code.slice(0, 20), name: desc.slice(0, 200), items: [] };
+        currentChapter.subchapters.push(currentSub);
       }
     }
   }

@@ -1,6 +1,7 @@
 {
   "extends": "@santaisabel/config/tsconfig/nestjs.json",
   "compilerOptions": {
+    "outDir": "./dist",
     "baseUrl": "./src",
     "paths": {
       "@/*": ["*"]

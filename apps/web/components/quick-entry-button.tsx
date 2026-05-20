@@ -6,12 +6,12 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 const ACTIONS = [
-  { icon: BookOpen,    label: 'Nueva entrada bitácora',   href: (id: string) => `/dashboard/projects/${id}/logbook/new`,   color: 'bg-blue-500' },
-  { icon: TrendingUp,  label: 'Nuevo ingreso de caja',    href: (id: string) => `/dashboard/projects/${id}/cashflow`,       color: 'bg-green-500' },
-  { icon: TrendingDown,label: 'Nuevo egreso de caja',     href: (id: string) => `/dashboard/projects/${id}/cashflow`,       color: 'bg-red-500' },
-  { icon: FileText,    label: 'Nuevo contrato',            href: (id: string) => `/dashboard/projects/${id}/contracts/new`, color: 'bg-violet-500' },
-  { icon: AlertCircle, label: 'Nueva no conformidad',     href: (id: string) => `/dashboard/projects/${id}/quality/new`,   color: 'bg-amber-500' },
-  { icon: ShieldCheck, label: 'Nuevo reporte SST',        href: (id: string) => `/dashboard/projects/${id}/safety/new`,    color: 'bg-teal-500' },
+  { icon: BookOpen,    label: 'Nueva entrada bitácora',   href: (id: string) => `/dashboard/projects/${id}/logbook`,    color: 'bg-blue-500' },
+  { icon: TrendingUp,  label: 'Nuevo ingreso de caja',    href: (id: string) => `/dashboard/projects/${id}/cashflow`,   color: 'bg-green-500' },
+  { icon: TrendingDown,label: 'Nuevo egreso de caja',     href: (id: string) => `/dashboard/projects/${id}/cashflow`,   color: 'bg-red-500' },
+  { icon: FileText,    label: 'Nuevo contrato',            href: (id: string) => `/dashboard/projects/${id}/contracts`, color: 'bg-violet-500' },
+  { icon: AlertCircle, label: 'Nueva no conformidad',     href: (id: string) => `/dashboard/projects/${id}/quality`,   color: 'bg-amber-500' },
+  { icon: ShieldCheck, label: 'Nuevo reporte SST',        href: (id: string) => `/dashboard/projects/${id}/safety`,    color: 'bg-teal-500' },
 ];
 
 export function QuickEntryButton() {
