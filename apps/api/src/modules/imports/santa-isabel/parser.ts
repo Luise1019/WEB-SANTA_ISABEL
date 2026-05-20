@@ -668,6 +668,11 @@ function parseBudget(matrix: Matrix, warnings: string[]): { chapters: Chapter[];
       const isChapterDesc = /^cap(\.|itulo)?\s*[ivx\d]+/i.test(desc);
 
       if (isRoman || isChapterDesc) {
+        // Skip "TOTAL ..." rows that reuse a chapter code (they are subtotal summary rows)
+        const isSummaryRow = /^total\b|^incidencia\b|^gran\s+total/i.test(desc);
+        if (isSummaryRow && chapters.some((c) => c.code === (code || ''))) {
+          continue; // skip subtotal row — don't create duplicate chapter
+        }
         currentChapter = {
           code: (code || `CAP-${chapters.length + 1}`).slice(0, 20),
           name: desc.slice(0, 200),
