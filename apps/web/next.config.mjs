@@ -6,32 +6,58 @@ const withPWA = nextPWA({
   skipWaiting: true,
   clientsClaim: true,
   disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline',
+  },
   runtimeCaching: [
+    // API: NetworkFirst con timeout corto — usuario ve datos frescos cuando hay red
     {
       urlPattern: /^https?.*\/api\/v1\/.*/i,
       handler: 'NetworkFirst',
       options: {
         cacheName: 'api-cache',
-        networkTimeoutSeconds: 10,
+        networkTimeoutSeconds: 3,
         expiration: { maxEntries: 200, maxAgeSeconds: 24 * 60 * 60 },
+        cacheableResponse: { statuses: [0, 200] },
       },
     },
+    // Static assets versionados de Next: CacheFirst, larga duración
     {
       urlPattern: /\/_next\/static\/.*/i,
       handler: 'CacheFirst',
       options: {
         cacheName: 'next-static',
-        expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
+        expiration: { maxEntries: 300, maxAgeSeconds: 30 * 24 * 60 * 60 },
       },
     },
+    // Imágenes optimizadas por Next/image
     {
-      urlPattern: /\/icons\/.*\.(png|svg|ico)$/i,
+      urlPattern: /\/_next\/image\?.*$/i,
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'next-image',
+        expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 60 * 60 },
+      },
+    },
+    // Íconos, manifest, favicon
+    {
+      urlPattern: /\/(icons|favicon)\/.*\.(png|svg|ico|webp)$/i,
       handler: 'CacheFirst',
       options: {
-        cacheName: 'icons',
+        cacheName: 'app-icons',
         expiration: { maxEntries: 50, maxAgeSeconds: 30 * 24 * 60 * 60 },
       },
     },
+    // Google Fonts
+    {
+      urlPattern: /^https:\/\/fonts\.(gstatic|googleapis)\.com\/.*/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'google-fonts',
+        expiration: { maxEntries: 30, maxAgeSeconds: 365 * 24 * 60 * 60 },
+      },
+    },
+    // Páginas HTML: StaleWhileRevalidate para que muestren rápido y se actualicen en background
     {
       urlPattern: /\/.*/i,
       handler: 'StaleWhileRevalidate',

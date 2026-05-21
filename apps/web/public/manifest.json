@@ -1,15 +1,19 @@
 {
+  "id": "/dashboard",
   "name": "Santa Isabel — Gestión Inmobiliaria",
   "short_name": "Santa Isabel",
   "description": "Plataforma de gestión de proyectos inmobiliarios — presupuesto, cronograma, ventas, bitácora",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "orientation": "portrait-primary",
   "background_color": "#0f172a",
   "theme_color": "#1e3a5f",
   "lang": "es-CO",
+  "dir": "ltr",
   "categories": ["business", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-192.png",
@@ -38,13 +42,17 @@
   "shortcuts": [
     {
       "name": "Proyectos",
+      "short_name": "Proyectos",
       "url": "/dashboard/projects",
-      "description": "Ver lista de proyectos"
+      "description": "Ver lista de proyectos",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Bitácora",
+      "short_name": "Bitácora",
       "url": "/dashboard",
-      "description": "Nueva entrada de bitácora"
+      "description": "Nueva entrada de bitácora",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

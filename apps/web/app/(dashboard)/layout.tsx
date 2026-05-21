@@ -37,6 +37,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Toaster } from 'sonner';
 
+import { InstallPrompt } from '@/components/install-prompt';
 import { ProjectContextLoader } from '@/components/project-context-loader';
 import { QuickEntryButton } from '@/components/quick-entry-button';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -882,6 +883,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       <Toaster position="top-right" richColors closeButton />
+      <InstallPrompt />
     </div>
   );
 }
