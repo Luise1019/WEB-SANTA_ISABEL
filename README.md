@@ -59,6 +59,23 @@ pnpm dev
 - Web: http://localhost:3000
 - Prisma Studio: `pnpm db:studio`
 
+### Endpoints útiles en desarrollo
+
+- API REST: http://localhost:4000/api/v1
+- Swagger / OpenAPI: http://localhost:4000/docs
+- Health: http://localhost:4000/health
+- Web PWA: http://localhost:3000 (instalable desde Chrome/Edge móvil o desktop)
+- Página offline: http://localhost:3000/offline
+
+### Características de plataforma
+
+- **Auth con rotación de refresh tokens** (detección de reuso, revocación cascada)
+- **Multi-tenant guard** automático en endpoints sensibles vía `@ScopeOrg`
+- **PWA instalable** con caché por estrategia (NetworkFirst API, CacheFirst static, SWR pages)
+- **Dark mode** con respeto a `prefers-color-scheme` y override manual
+- **Tests** Vitest en `apps/api`, `apps/web` y `packages/shared` (46 tests al cierre del hardening)
+- **Pre-commit** hooks con husky + lint-staged (prettier auto-format)
+
 ## Scripts útiles
 
 | Script | Descripción |

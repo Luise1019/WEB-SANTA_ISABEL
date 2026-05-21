@@ -24,10 +24,21 @@
     "db:studio": "pnpm --filter @santaisabel/db studio",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
     "prettier": "^3.3.3",
     "rimraf": "^6.0.1",
     "turbo": "^2.1.3",
