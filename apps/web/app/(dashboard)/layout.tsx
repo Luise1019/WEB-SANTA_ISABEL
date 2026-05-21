@@ -39,6 +39,7 @@ import { Toaster } from 'sonner';
 
 import { ProjectContextLoader } from '@/components/project-context-loader';
 import { QuickEntryButton } from '@/components/quick-entry-button';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { api as apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-store';
 import { useProjectStore } from '@/lib/project-store';
@@ -752,8 +753,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </div>
 
-        {/* ── Footer: user + collapse ─────────────────────────────────────── */}
+        {/* ── Footer: theme + user + collapse ──────────────────────────────── */}
         <div className="border-t border-white/8 p-2 space-y-1">
+          {/* Theme toggle */}
+          <div className={cn('flex', collapsed ? 'justify-center' : 'justify-end px-1')}>
+            <ThemeToggle variant={collapsed ? 'compact' : 'compact'} />
+          </div>
           {/* User row */}
           <div className={cn(
             'flex items-center gap-2 rounded-lg px-2 py-1.5',
