@@ -558,4 +558,40 @@ export const api = {
     }),
   deleteLogbookEntry: (projectId: string, id: string) =>
     request<{ ok: boolean }>(`/projects/${projectId}/logbook/${id}`, { method: 'DELETE' }),
+
+  // ── Admin ──────────────────────────────────────────────────────────────────
+  getAdminOrg: () =>
+    request<Record<string, unknown>>('/admin/organization'),
+  updateAdminOrg: (body: unknown) =>
+    request<Record<string, unknown>>('/admin/organization', { method: 'PATCH', body: JSON.stringify(body) }),
+
+  getAdminParams: () =>
+    request<Record<string, unknown>>('/admin/params'),
+  updateAdminParams: (body: unknown) =>
+    request<Record<string, unknown>>('/admin/params', { method: 'PATCH', body: JSON.stringify(body) }),
+
+  listAdminUsers: () =>
+    request<Array<Record<string, unknown>>>('/admin/users'),
+  createAdminUser: (body: unknown) =>
+    request<Record<string, unknown>>('/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+  updateAdminUser: (id: string, body: unknown) =>
+    request<Record<string, unknown>>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  resetAdminPassword: (id: string, body: unknown) =>
+    request<{ ok: boolean }>(`/admin/users/${id}/reset-password`, { method: 'POST', body: JSON.stringify(body) }),
+  getUserProjects: (id: string) =>
+    request<Array<Record<string, unknown>>>(`/admin/users/${id}/projects`),
+
+  getProjectMembers: (projectId: string) =>
+    request<Array<Record<string, unknown>>>(`/admin/projects/${projectId}/members`),
+  addProjectMember: (projectId: string, body: unknown) =>
+    request<Record<string, unknown>>(`/admin/projects/${projectId}/members`, { method: 'POST', body: JSON.stringify(body) }),
+  removeProjectMember: (projectId: string, userId: string) =>
+    request<{ ok: boolean }>(`/admin/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+
+  getAuditLogs: (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    return request<Record<string, unknown>>(`/admin/audit${qs}`);
+  },
+  getAuditStats: () =>
+    request<Record<string, unknown>>('/admin/audit/stats'),
 };

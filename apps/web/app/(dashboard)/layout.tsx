@@ -24,6 +24,7 @@ import {
   LineChart,
   LogOut,
   Menu,
+  Shield,
   ShieldAlert,
   ShieldCheck,
   TrendingUp,
@@ -57,8 +58,9 @@ type SidebarStats = {
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const NAV_MAIN = [
-  { href: '/dashboard',          label: 'Inicio',    icon: Home,       exact: true,  shortcut: 'G H' },
-  { href: '/dashboard/projects', label: 'Proyectos', icon: FolderOpen, exact: false, shortcut: 'G P' },
+  { href: '/dashboard',          label: 'Inicio',    icon: Home,       exact: true,  shortcut: 'G H', adminOnly: false },
+  { href: '/dashboard/projects', label: 'Proyectos', icon: FolderOpen, exact: false, shortcut: 'G P', adminOnly: false },
+  { href: '/dashboard/admin',    label: 'Admin',     icon: Shield,     exact: false, shortcut: 'G A', adminOnly: true  },
 ];
 
 type ModuleEntry = {
@@ -688,7 +690,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10 px-2 py-3 space-y-0.5">
 
           {/* Main nav */}
-          {NAV_MAIN.map((item) => (
+          {NAV_MAIN.filter((item) => !item.adminOnly || user?.role === 'GERENTE').map((item) => (
             <NavItem key={item.href} {...item} collapsed={collapsed} />
           ))}
 

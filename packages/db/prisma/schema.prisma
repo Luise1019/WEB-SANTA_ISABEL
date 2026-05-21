@@ -15,24 +15,61 @@ datasource db {
 // ============================================================
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  taxId     String?  @unique
-  logoUrl   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  taxId        String?  @unique
+  logoUrl      String?
+  // Datos de contacto y facturación
+  phone        String?
+  address      String?
+  city         String?
+  website      String?
+  // Configuración de reportes
+  reportFooter String?
+  reportColor  String?  @default("#1e3a5f")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   users    User[]
   projects Project[]
+  params   SystemParams?
   externalConnectors ExternalConnector[]
 }
 
+/// Parámetros globales de la organización (AIU, tasas, factor prestacional)
+model SystemParams {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+
+  // AIU por defecto (%)
+  aiuAdmin       Decimal  @db.Decimal(5, 2) @default(10)
+  aiuImprevistos Decimal  @db.Decimal(5, 2) @default(5)
+  aiuUtilidad    Decimal  @db.Decimal(5, 2) @default(8)
+
+  // Factor prestacional (ratio, e.g. 0.5213 = 52.13%)
+  factorPrestacional Decimal @db.Decimal(6, 4) @default(0.5213)
+
+  // Tasas e impuestos
+  ivaRate     Decimal @db.Decimal(5, 2) @default(19)    // IVA general %
+  reteIvaRate Decimal @db.Decimal(5, 2) @default(15)    // ReteIVA % sobre IVA
+  reteIcaRate Decimal @db.Decimal(7, 4) @default(0.966) // ReteICA por mil
+  trm         Decimal @db.Decimal(10, 2) @default(4200) // TRM USD/COP
+
+  // Salario mínimo mensual legal vigente
+  smmlv       Decimal @db.Decimal(12, 2) @default(1300000)
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
 enum UserRole {
-  GERENTE
-  DIRECTOR_OBRA
-  CONTADOR
-  COMERCIAL
-  AUDITOR
+  GERENTE         // Administrador total
+  DIRECTOR_OBRA   // Director de proyecto — acceso completo por proyecto
+  RESIDENTE_OBRA  // Residente — registro diario, lectura de módulos financieros
+  CONTADOR        // Acceso a módulos financieros (presupuesto, caja, contratos)
+  COMERCIAL       // Acceso a módulo de ventas
+  AUDITOR         // Solo lectura
 }
 
 model User {

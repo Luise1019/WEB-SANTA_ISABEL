@@ -21,6 +21,7 @@ import { ProjectsModule } from './modules/projects/projects.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -44,6 +45,7 @@ import { UsersModule } from './modules/users/users.module';
     AuditModule,
     HealthModule,
     AuthModule,
+    AdminModule,
     UsersModule,
     ProjectsModule,
     BudgetModule,
