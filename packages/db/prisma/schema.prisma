@@ -93,8 +93,30 @@ model User {
   importJobs      ImportJob[]
   generatedReports GeneratedReport[]
   aiConversations AIConversation[]
+  refreshTokens   RefreshToken[]
 
   @@index([organizationId])
+}
+
+/// Refresh tokens con rotación: cada refresh emite uno nuevo y revoca el anterior.
+/// Permite invalidar sesiones individualmente y detectar reuso (señal de robo).
+model RefreshToken {
+  id            String    @id @default(uuid())
+  userId        String
+  tokenHash     String    @unique
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  replacedById  String?   @unique
+  userAgent     String?
+  ip            String?
+  createdAt     DateTime  @default(now())
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy  RefreshToken? @relation("TokenChain", fields: [replacedById], references: [id])
+  replaces    RefreshToken? @relation("TokenChain")
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model AuditLog {

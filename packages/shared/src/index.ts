@@ -8,5 +8,6 @@ export * from './schemas/cashflow';
 export * from './schemas/sales';
 export * from './schemas/changes';
 export * from './schemas/feasibility';
+export * from './schemas/pagination';
 export * from './constants/chapters';
 export * from './constants/holidays-co';
