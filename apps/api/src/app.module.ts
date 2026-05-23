@@ -12,6 +12,7 @@ import { BudgetModule } from './modules/budget/budget.module';
 import { CashflowModule } from './modules/cashflow/cashflow.module';
 import { ChangesModule } from './modules/changes/changes.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { DriveModule } from './modules/drive/drive.module';
 import { FeasibilityModule } from './modules/feasibility/feasibility.module';
 import { HealthModule } from './modules/health/health.module';
 import { ImportsModule } from './modules/imports/imports.module';
@@ -54,6 +55,7 @@ import { UsersModule } from './modules/users/users.module';
     SalesModule,
     ChangesModule,
     DashboardModule,
+    DriveModule,
     ReportsModule,
     FeasibilityModule,
     ImportsModule,

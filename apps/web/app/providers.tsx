@@ -17,14 +17,24 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
+            staleTime: 60_000, // 1 min antes de considerar datos stale (era 30s)
+            gcTime: 10 * 60_000, // 10 min en cache antes de garbage collect
             refetchOnWindowFocus: false,
+            refetchOnReconnect: 'always', // re-fetch al recuperar conexion
             retry: (failureCount, error) => {
-              if (error && typeof error === 'object' && 'status' in error && (error as { status?: number }).status === 401) {
+              if (
+                error &&
+                typeof error === 'object' &&
+                'status' in error &&
+                (error as { status?: number }).status === 401
+              ) {
                 return false;
               }
               return failureCount < 2;
             },
+          },
+          mutations: {
+            retry: false,
           },
         },
       }),

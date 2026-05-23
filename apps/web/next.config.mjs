@@ -75,6 +75,10 @@ const nextConfig = {
   transpilePackages: ['@santaisabel/shared'],
   experimental: {
     typedRoutes: false,
+    optimizePackageImports: ['lucide-react', '@tanstack/react-query', 'sonner'],
+  },
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
   async rewrites() {
     const internalApiUrl = process.env.API_INTERNAL_URL ?? 'http://localhost:4000';
@@ -82,6 +86,22 @@ const nextConfig = {
       {
         source: '/api/v1/:path*',
         destination: `${internalApiUrl}/api/v1/:path*`,
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-DNS-Prefetch-Control', value: 'on' },
+        ],
+      },
+      {
+        source: '/_next/static/(.*)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
       },
     ];
   },

@@ -1,0 +1,49 @@
+{
+  "name": "Santa Isabel - Gestion Inmobiliaria",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22",
+      "installYarnUsingApt": false
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers-contrib/features/pnpm:2": {
+      "version": "9"
+    }
+  },
+
+  "forwardPorts": [3000, 4000, 5432, 6379],
+  "portsAttributes": {
+    "3000": { "label": "Web (Next.js)", "onAutoForward": "openBrowser" },
+    "4000": { "label": "API (NestJS)", "onAutoForward": "notify" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" },
+    "6379": { "label": "Redis", "onAutoForward": "silent" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        },
+        "typescript.preferences.importModuleSpecifier": "non-relative",
+        "files.eol": "\n"
+      }
+    }
+  }
+}

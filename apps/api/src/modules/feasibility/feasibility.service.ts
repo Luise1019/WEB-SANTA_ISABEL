@@ -1,19 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  FeasibilityAnalysis,
+  FeasibilityCashFlow,
+  FeasibilityCostItem,
+  FeasibilityScenario,
+  Prisma,
+} from '@prisma/client';
 import Decimal from 'decimal.js';
 import type {
   FeasibilityAnalysisInput,
-  FeasibilityCostItemInput,
   FeasibilityCashFlowInput,
+  FeasibilityCostItemInput,
   FeasibilityScenarioInput,
 } from '@santaisabel/shared';
 
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  calculateIRR,
-  calculateNPV,
-  calculatePaybackMonths,
-} from './tir-npv.calculator';
+import { calculateIRR, calculateNPV, calculatePaybackMonths } from './tir-npv.calculator';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 const toDec = (v: string | null | undefined): Prisma.Decimal | null =>
   v === null || v === undefined || v === '' ? null : new Prisma.Decimal(v);
@@ -21,11 +25,53 @@ const toDec = (v: string | null | undefined): Prisma.Decimal | null =>
 const toDecDefault = (v: string | null | undefined, fallback = '0'): Prisma.Decimal =>
   new Prisma.Decimal(v ?? fallback);
 
+/** Compute net cash flow for a single row (inflows - outflows). */
+function netFlowForRow(r: FeasibilityCashFlow, priceFactor = 1, costFactor = 1): number {
+  const pf = new Decimal(priceFactor);
+  const cf = new Decimal(costFactor);
+
+  const salesInflow = new Decimal(r.salesInitialPayment.toString())
+    .plus(r.salesFinalPayment.toString())
+    .times(pf);
+  const otherInflow = new Decimal(r.ownResources.toString()).plus(r.constructionCredit.toString());
+  const outflow = new Decimal(r.directCosts.toString())
+    .plus(r.indirectCosts.toString())
+    .plus(r.financialCosts.toString())
+    .times(cf);
+
+  return salesInflow.plus(otherInflow).minus(outflow).toNumber();
+}
+
+/** Convert annual discount rate (as percentage, e.g. 12) to monthly decimal rate. */
+function toMonthlyRate(annualPct: Decimal | Prisma.Decimal): number {
+  const annual = Number(new Decimal(annualPct.toString()).div(100));
+  return Math.pow(1 + annual, 1 / 12) - 1;
+}
+
+// ─── DTOs de respuesta tipados ──────────────────────────────────────────────
+
+export interface FeasibilityFullResponse {
+  analysis: FeasibilityAnalysis;
+  costItems: FeasibilityCostItem[];
+  cashFlow: FeasibilityCashFlow[];
+  scenarios: FeasibilityScenario[];
+}
+
+export interface IndicatorsResponse {
+  tir: string | null;
+  npv: string | null;
+  paybackMonths: number | null;
+  netFlows: string[];
+}
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
 @Injectable()
 export class FeasibilityService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getOrCreate(projectId: string) {
+  /** Get or lazily create the analysis record for a project. */
+  async getOrCreate(projectId: string): Promise<FeasibilityAnalysis> {
     const existing = await this.prisma.feasibilityAnalysis.findUnique({
       where: { projectId },
     });
@@ -35,7 +81,8 @@ export class FeasibilityService {
     });
   }
 
-  async getByProject(projectId: string) {
+  /** Full read: analysis + costItems + cashFlow + scenarios. */
+  async getByProject(projectId: string): Promise<FeasibilityFullResponse> {
     const analysis = await this.getOrCreate(projectId);
     const [costItems, cashFlow, scenarios] = await Promise.all([
       this.prisma.feasibilityCostItem.findMany({
@@ -54,8 +101,12 @@ export class FeasibilityService {
     return { analysis, costItems, cashFlow, scenarios };
   }
 
-  async updateAnalysis(projectId: string, input: FeasibilityAnalysisInput) {
-    const data: Prisma.FeasibilityAnalysisUncheckedUpdateInput = {
+  /** Upsert header fields — DRY: builds data object once. */
+  async updateAnalysis(
+    projectId: string,
+    input: FeasibilityAnalysisInput,
+  ): Promise<FeasibilityAnalysis> {
+    const fields = {
       promoter: input.promoter ?? null,
       totalUnits: input.totalUnits ?? null,
       builtAreaM2: toDec(input.builtAreaM2 ?? null),
@@ -71,26 +122,16 @@ export class FeasibilityService {
     };
     return this.prisma.feasibilityAnalysis.upsert({
       where: { projectId },
-      update: data,
-      create: {
-        projectId,
-        promoter: input.promoter ?? null,
-        totalUnits: input.totalUnits ?? null,
-        builtAreaM2: toDec(input.builtAreaM2 ?? null),
-        saleableAreaM2: toDec(input.saleableAreaM2 ?? null),
-        pricePerM2: toDec(input.pricePerM2 ?? null),
-        totalSales: toDec(input.totalSales ?? null),
-        initialPaymentPct: toDec(input.initialPaymentPct ?? null),
-        breakEvenUnits: input.breakEvenUnits ?? null,
-        stratum: input.stratum ?? null,
-        constructionSystem: input.constructionSystem ?? null,
-        discountRate: toDecDefault(input.discountRate, '12'),
-        notes: input.notes ?? null,
-      },
+      update: fields,
+      create: { projectId, ...fields },
     });
   }
 
-  async replaceCostItems(projectId: string, items: FeasibilityCostItemInput[]) {
+  /** Atomic replace of all cost items for a project. */
+  async replaceCostItems(
+    projectId: string,
+    items: FeasibilityCostItemInput[],
+  ): Promise<FeasibilityCostItem[]> {
     const analysis = await this.getOrCreate(projectId);
     return this.prisma.$transaction(async (tx) => {
       await tx.feasibilityCostItem.deleteMany({ where: { analysisId: analysis.id } });
@@ -114,7 +155,11 @@ export class FeasibilityService {
     });
   }
 
-  async replaceCashFlow(projectId: string, rows: FeasibilityCashFlowInput[]) {
+  /** Atomic replace of all cash flow rows for a project. */
+  async replaceCashFlow(
+    projectId: string,
+    rows: FeasibilityCashFlowInput[],
+  ): Promise<FeasibilityCashFlow[]> {
     const analysis = await this.getOrCreate(projectId);
     return this.prisma.$transaction(async (tx) => {
       await tx.feasibilityCashFlow.deleteMany({ where: { analysisId: analysis.id } });
@@ -143,26 +188,15 @@ export class FeasibilityService {
   }
 
   /** Build net monthly cash flow array and compute TIR/VPN/Payback. */
-  async recalculateIndicators(projectId: string) {
+  async recalculateIndicators(projectId: string): Promise<IndicatorsResponse> {
     const analysis = await this.getOrCreate(projectId);
     const rows = await this.prisma.feasibilityCashFlow.findMany({
       where: { analysisId: analysis.id },
       orderBy: [{ year: 'asc' }, { month: 'asc' }],
     });
 
-    const netFlows: number[] = rows.map((r) => {
-      const inflow = new Decimal(r.salesInitialPayment.toString())
-        .plus(r.salesFinalPayment.toString())
-        .plus(r.ownResources.toString())
-        .plus(r.constructionCredit.toString());
-      const outflow = new Decimal(r.directCosts.toString())
-        .plus(r.indirectCosts.toString())
-        .plus(r.financialCosts.toString());
-      return inflow.minus(outflow).toNumber();
-    });
-
-    const annualRate = Number(new Decimal(analysis.discountRate.toString()).div(100));
-    const monthlyRate = Math.pow(1 + annualRate, 1 / 12) - 1;
+    const netFlows = rows.map((r) => netFlowForRow(r));
+    const monthlyRate = toMonthlyRate(analysis.discountRate);
 
     const irrMonthly = calculateIRR(netFlows);
     const irrAnnual = irrMonthly !== null ? Math.pow(1 + irrMonthly, 12) - 1 : null;
@@ -186,31 +220,22 @@ export class FeasibilityService {
     };
   }
 
-  async createScenario(projectId: string, input: FeasibilityScenarioInput) {
+  /** Create a what-if scenario with price/cost variation applied to cash flows. */
+  async createScenario(
+    projectId: string,
+    input: FeasibilityScenarioInput,
+  ): Promise<FeasibilityScenario> {
     const analysis = await this.getOrCreate(projectId);
     const rows = await this.prisma.feasibilityCashFlow.findMany({
       where: { analysisId: analysis.id },
       orderBy: [{ year: 'asc' }, { month: 'asc' }],
     });
 
-    const priceFactor = new Decimal(1).plus(new Decimal(input.priceVariationPct).div(100));
-    const costFactor = new Decimal(1).plus(new Decimal(input.costVariationPct).div(100));
+    const priceFactor = 1 + Number(input.priceVariationPct) / 100;
+    const costFactor = 1 + Number(input.costVariationPct) / 100;
+    const netFlows = rows.map((r) => netFlowForRow(r, priceFactor, costFactor));
 
-    const netFlows = rows.map((r) => {
-      const inflow = new Decimal(r.salesInitialPayment.toString())
-        .plus(r.salesFinalPayment.toString())
-        .times(priceFactor)
-        .plus(r.ownResources.toString())
-        .plus(r.constructionCredit.toString());
-      const outflow = new Decimal(r.directCosts.toString())
-        .plus(r.indirectCosts.toString())
-        .plus(r.financialCosts.toString())
-        .times(costFactor);
-      return inflow.minus(outflow).toNumber();
-    });
-
-    const annualRate = Number(new Decimal(analysis.discountRate.toString()).div(100));
-    const monthlyRate = Math.pow(1 + annualRate, 1 / 12) - 1;
+    const monthlyRate = toMonthlyRate(analysis.discountRate);
     const irrMonthly = calculateIRR(netFlows);
     const irrAnnual = irrMonthly !== null ? Math.pow(1 + irrMonthly, 12) - 1 : null;
     const npv = netFlows.length > 0 ? calculateNPV(netFlows, monthlyRate) : 0;
@@ -228,9 +253,18 @@ export class FeasibilityService {
     });
   }
 
-  async deleteScenario(scenarioId: string) {
-    const sc = await this.prisma.feasibilityScenario.findUnique({ where: { id: scenarioId } });
-    if (!sc) throw new NotFoundException(`Escenario ${scenarioId} no existe`);
+  /**
+   * Delete a scenario — validates it belongs to the given project.
+   * Prevents cross-project deletion if someone guesses a UUID.
+   */
+  async deleteScenario(projectId: string, scenarioId: string): Promise<void> {
+    const analysis = await this.getOrCreate(projectId);
+    const sc = await this.prisma.feasibilityScenario.findUnique({
+      where: { id: scenarioId },
+    });
+    if (!sc || sc.analysisId !== analysis.id) {
+      throw new NotFoundException(`Escenario ${scenarioId} no existe`);
+    }
     await this.prisma.feasibilityScenario.delete({ where: { id: scenarioId } });
   }
 }

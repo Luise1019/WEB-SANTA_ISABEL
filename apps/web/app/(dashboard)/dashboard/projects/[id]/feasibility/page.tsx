@@ -2,18 +2,35 @@
 
 /**
  * Módulo de Prefactibilidad Inmobiliaria — Modelo CREDICORP
- * Replica la hoja "prefactibilidad CREDICORP" del Excel EJEMPLO.xlsx
- * Cálculos en tiempo real · Cifras en miles de COP (÷1000 para mostrar)
+ * - Cálculos en tiempo real con motor local
+ * - Persistencia automática en API via TanStack Query
+ * - Reporte HTML interactivo con gráficos CSS y print-ready
+ * - Dark mode compatible
  */
 
-import { Download, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  BarChart3,
+  Calculator,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Eye,
+  Loader2,
+  Printer,
+  RefreshCw,
+  Save,
+  TrendingUp,
+} from 'lucide-react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { ModuleHeader } from '@/components/module-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { api } from '@/lib/api-client';
 import {
   calculate,
   ci,
@@ -22,33 +39,32 @@ import {
   fmtPct,
   type CostItem,
   type FeasibilityInputs,
+  type FeasibilityResults,
   type LineResult,
 } from '@/lib/feasibility-engine';
 
 // ─── Helpers de UI ────────────────────────────────────────────────────────────
 
-/** Formatea COP completo → miles con separador de miles CO */
 const toMiles = (cop: number) =>
   cop === 0 ? '—' : new Intl.NumberFormat('es-CO').format(Math.round(cop / 1000));
 
-/** Lee un string y devuelve COP (el usuario escribe en miles) */
-const parseMiles = (s: string) =>
-  Math.round((parseFloat(s.replace(/[^0-9.-]/g, '')) || 0) * 1000);
+const parseMiles = (s: string) => Math.round((parseFloat(s.replace(/[^0-9.-]/g, '')) || 0) * 1000);
 
-/** Clamp para no permitir negativos */
 const clamp0 = (n: number) => Math.max(0, n);
 
-// ─── Inputs numéricos de moneda (en miles de COP) ─────────────────────────────
+// ─── CopInput ─────────────────────────────────────────────────────────────────
 
 function CopInput({
-  value, onChange, className = '',
+  value,
+  onChange,
+  className = '',
 }: {
-  value: number;       // COP completo internamente
+  value: number;
   onChange: (v: number) => void;
   className?: string;
 }) {
   const [editing, setEditing] = useState(false);
-  const [raw, setRaw]         = useState('');
+  const [raw, setRaw] = useState('');
 
   const display = value === 0 ? '' : String(Math.round(value / 1000));
 
@@ -57,7 +73,10 @@ function CopInput({
       type="text"
       inputMode="numeric"
       value={editing ? raw : display}
-      onFocus={() => { setEditing(true); setRaw(display); }}
+      onFocus={() => {
+        setEditing(true);
+        setRaw(display);
+      }}
       onChange={(e) => setRaw(e.target.value)}
       onBlur={() => {
         setEditing(false);
@@ -69,74 +88,26 @@ function CopInput({
   );
 }
 
-/** Input para CostItem (Fideicomiso + Constructor) */
-function CostItemInputs({
-  value, onChange,
-}: {
-  value: CostItem;
-  onChange: (v: CostItem) => void;
-}) {
-  return (
-    <>
-      <CopInput value={value.fid} onChange={(fid) => onChange({ ...value, fid })} />
-      <CopInput value={value.con} onChange={(con) => onChange({ ...value, con })} />
-    </>
-  );
-}
-
-// ─── Fila calculada de la tabla de costos ─────────────────────────────────────
-
-type RowVariant = 'header' | 'subheader' | 'sub' | 'total' | 'utilidad' | 'ventas';
-
-function CostRow({
-  label, result, variant = 'sub', indent = false,
-}: {
-  label:    string;
-  result:   LineResult;
-  variant?: RowVariant;
-  indent?:  boolean;
-}) {
-  const bg =
-    variant === 'header'   ? 'bg-slate-700 text-white font-bold' :
-    variant === 'subheader'? 'bg-slate-100 font-semibold text-slate-800' :
-    variant === 'total'    ? 'bg-blue-900  text-white font-bold' :
-    variant === 'utilidad' ? 'bg-green-700 text-white font-bold' :
-    variant === 'ventas'   ? 'bg-slate-600 text-white font-semibold' :
-    'hover:bg-slate-50';
-
-  const numCls = `text-right font-mono tabular-nums text-xs ${variant === 'sub' ? 'text-slate-700' : ''}`;
-
-  return (
-    <tr className={`border-b border-slate-100 last:border-0 ${bg}`}>
-      <td className={`py-1.5 pr-3 text-xs ${indent ? 'pl-8' : 'pl-3'} ${variant === 'sub' ? 'text-slate-600' : ''}`}>
-        {indent && <span className="mr-1 text-slate-400">·</span>}
-        {label}
-      </td>
-      <td className={`py-1.5 px-2 ${numCls}`}>{toMiles(result.fid)}</td>
-      <td className={`py-1.5 px-2 ${numCls}`}>{result.con > 0 ? toMiles(result.con) : (result.fid > 0 ? '—' : '—')}</td>
-      <td className={`py-1.5 px-2 ${numCls} font-semibold`}>{toMiles(result.total)}</td>
-      <td className={`py-1.5 pl-2 pr-3 text-right text-xs font-mono ${variant === 'sub' ? 'text-slate-500' : ''}`}>
-        {result.pctSales > 0 ? fmtPct(result.pctSales) : '—'}
-      </td>
-    </tr>
-  );
-}
-
-// ─── Fila editable de la tabla de costos ──────────────────────────────────────
+// ─── Fila editable ────────────────────────────────────────────────────────────
 
 function EditableCostRow({
-  label, value, result, onChange, indent = false,
+  label,
+  value,
+  result,
+  onChange,
+  indent = false,
 }: {
-  label:    string;
-  value:    CostItem;
-  result:   LineResult;
+  label: string;
+  value: CostItem;
+  result: LineResult;
   onChange: (v: CostItem) => void;
-  indent?:  boolean;
+  indent?: boolean;
 }) {
   return (
-    <tr className="border-b border-slate-100 hover:bg-blue-50/30 group">
-      <td className={`py-1 pr-3 text-xs text-slate-600 ${indent ? 'pl-8' : 'pl-3'}`}>
-        {indent && <span className="mr-1 text-slate-400">·</span>}{label}
+    <tr className="border-b border-border hover:bg-primary/5 group">
+      <td className={`py-1 pr-3 text-xs text-muted-foreground ${indent ? 'pl-8' : 'pl-3'}`}>
+        {indent && <span className="mr-1 text-muted-foreground/50">&middot;</span>}
+        {label}
       </td>
       <td className="py-1 px-1.5">
         <CopInput value={value.fid} onChange={(fid) => onChange({ ...value, fid })} />
@@ -144,13 +115,52 @@ function EditableCostRow({
       <td className="py-1 px-1.5">
         <CopInput value={value.con} onChange={(con) => onChange({ ...value, con })} />
       </td>
-      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-xs font-semibold text-slate-800">
+      <td className="py-1.5 px-2 text-right font-mono tabular-nums text-xs font-semibold text-foreground">
         {toMiles(result.total)}
       </td>
-      <td className="py-1.5 pl-2 pr-3 text-right text-xs font-mono text-slate-500">
+      <td className="py-1.5 pl-2 pr-3 text-right text-xs font-mono text-muted-foreground">
         {result.pctSales > 0 ? fmtPct(result.pctSales) : '—'}
       </td>
     </tr>
+  );
+}
+
+// ─── Collapsible section ──────────────────────────────────────────────────────
+
+function CollapsibleSection({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold uppercase tracking-wider text-primary hover:bg-primary/5 transition-colors rounded-lg"
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        {title}
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
+// ─── Field component ──────────────────────────────────────────────────────────
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
+      {children}
+    </div>
   );
 }
 
@@ -161,33 +171,91 @@ const DEFAULTS = DEFAULT_INPUTS;
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function FeasibilityPage({ params }: { params: { id: string } }) {
+  const { id: projectId } = params;
+  const qc = useQueryClient();
+  const reportRef = useRef<HTMLIFrameElement>(null);
+
   // ── Estado de entradas ──────────────────────────────────────────────────
   const [inputs, setInputs] = useState<FeasibilityInputs>(DEFAULTS);
+  const [dirty, setDirty] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
-  const set = <K extends keyof FeasibilityInputs>(key: K, val: FeasibilityInputs[K]) =>
-    setInputs((prev) => ({ ...prev, [key]: val }));
+  // ── Cargar datos del API ────────────────────────────────────────────────
+  const { isLoading } = useQuery({
+    queryKey: ['feasibility', projectId],
+    queryFn: () => api.getFeasibility(projectId),
+    // On success, hydrate local state from DB if analysis has data
+    select: (data) => data as Record<string, unknown>,
+  });
 
-  const setCost = (key: keyof FeasibilityInputs, val: CostItem) =>
+  const set = <K extends keyof FeasibilityInputs>(key: K, val: FeasibilityInputs[K]) => {
     setInputs((prev) => ({ ...prev, [key]: val }));
+    setDirty(true);
+  };
+
+  const setCost = (key: keyof FeasibilityInputs, val: CostItem) => {
+    setInputs((prev) => ({ ...prev, [key]: val }));
+    setDirty(true);
+  };
 
   // ── Cálculo en tiempo real ──────────────────────────────────────────────
   const r = useMemo(() => calculate(inputs), [inputs]);
 
-  // ── Exportar reporte HTML ───────────────────────────────────────────────
-  const handleExport = () => {
-    const html = buildHtmlReport(inputs, r);
+  // ── Guardar en API ──────────────────────────────────────────────────────
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await api.updateFeasibility(projectId, {
+        promoter: inputs.promoter,
+        totalUnits: inputs.totalUnits,
+        builtAreaM2: String(inputs.builtAreaM2),
+        saleableAreaM2: String(r.saleableAreaM2),
+        pricePerM2: String(r.pricePerM2),
+        totalSales: String(inputs.totalSales),
+        initialPaymentPct: String(inputs.initialPaymentPct * 100),
+        breakEvenUnits: r.breakEvenUnits,
+        stratum: inputs.stratum,
+        constructionSystem: inputs.constructionSystem,
+        discountRate: '12',
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['feasibility', projectId] });
+      setDirty(false);
+      toast.success('Datos guardados exitosamente');
+    },
+    onError: () => toast.error('Error al guardar'),
+  });
+
+  // ── Exportar reporte HTML interactivo ───────────────────────────────────
+  const handleExport = useCallback(() => {
+    const html = buildInteractiveHtmlReport(inputs, r);
     const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  };
+  }, [inputs, r]);
+
+  // ── Preview inline del reporte ─────────────────────────────────────────
+  const handlePreview = useCallback(() => {
+    setShowReport(!showReport);
+  }, [showReport]);
 
   // ── Resetear ────────────────────────────────────────────────────────────
   const handleReset = () => {
     if (confirm('¿Restablecer todos los valores al ejemplo de referencia (Santa Isabel)?')) {
       setInputs(DEFAULTS);
+      setDirty(true);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-3 text-muted-foreground">Cargando prefactibilidad...</span>
+      </div>
+    );
+  }
 
   // ─── Render ────────────────────────────────────────────────────────────
   return (
@@ -195,498 +263,649 @@ export default function FeasibilityPage({ params }: { params: { id: string } }) 
       <ModuleHeader
         title="Prefactibilidad — Modelo CREDICORP"
         description="Motor de cálculo financiero · Estructura de costos · Fuentes y Usos · Indicadores"
-        infoText="Replica exactamente la hoja 'prefactibilidad CREDICORP' del Excel EJEMPLO.xlsx. Todos los campos son editables. Los cálculos se actualizan en tiempo real. Cifras en miles de COP."
+        infoText="Todos los campos son editables. Los cálculos se actualizan en tiempo real. Cifras en miles de COP."
         actions={
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={handleReset}>
               <RefreshCw className="mr-1 h-3.5 w-3.5" /> Restablecer
             </Button>
-            <Button size="sm" onClick={handleExport} className="bg-blue-700 hover:bg-blue-800 text-white">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => saveMutation.mutate()}
+              disabled={!dirty || saveMutation.isPending}
+            >
+              <Save className="mr-1 h-3.5 w-3.5" />
+              {saveMutation.isPending ? 'Guardando...' : 'Guardar'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handlePreview}>
+              <Eye className="mr-1 h-3.5 w-3.5" /> {showReport ? 'Ocultar' : 'Preview'}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleExport}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
               <Download className="mr-1 h-3.5 w-3.5" /> Exportar HTML
             </Button>
           </div>
         }
       />
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 1. DATOS GENERALES                                             */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <Card>
-        <CardHeader className="pb-2 pt-4">
-          <CardTitle className="text-sm font-bold uppercase tracking-wider text-blue-800">
-            Datos Generales del Proyecto
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
-
-            {/* Col 1 */}
-            <Field label="Promotor">
-              <Input value={inputs.promoter} onChange={(e) => set('promoter', e.target.value)} className="h-7 text-sm" />
-            </Field>
-            <Field label="Proyecto">
-              <Input value={inputs.projectName} onChange={(e) => set('projectName', e.target.value)} className="h-7 text-sm" />
-            </Field>
-            <Field label="Ciudad">
-              <Input value={inputs.city} onChange={(e) => set('city', e.target.value)} className="h-7 text-sm" />
-            </Field>
-            <Field label="Sistema constructivo">
-              <Input value={inputs.constructionSystem} onChange={(e) => set('constructionSystem', e.target.value)} className="h-7 text-sm" />
-            </Field>
-
-            {/* Col 2 */}
-            <Field label="# Total unidades">
-              <Input type="number" min={1} value={inputs.totalUnits}
-                onChange={(e) => set('totalUnits', Number(e.target.value) || 0)}
-                className="h-7 text-sm text-right font-mono" />
-            </Field>
-            <Field label="Estrato">
-              <Input type="number" min={1} max={6} value={inputs.stratum}
-                onChange={(e) => set('stratum', Number(e.target.value) || 1)}
-                className="h-7 text-sm text-right font-mono" />
-            </Field>
-            <Field label="Parqueaderos">
-              <Input value={inputs.parkingType} onChange={(e) => set('parkingType', e.target.value)} className="h-7 text-sm" />
-            </Field>
-            <Field label="M² construido">
-              <Input type="number" min={0} step={0.01} value={inputs.builtAreaM2}
-                onChange={(e) => set('builtAreaM2', parseFloat(e.target.value) || 0)}
-                className="h-7 text-sm text-right font-mono" />
-            </Field>
-
-            {/* Col 3 */}
-            <Field label="Factor área vendible">
-              <div className="flex items-center gap-1.5">
-                <Input type="number" min={0.5} max={3} step={0.001}
-                  value={inputs.saleableFactorPct}
-                  onChange={(e) => set('saleableFactorPct', parseFloat(e.target.value) || 1)}
-                  className="h-7 text-sm text-right font-mono flex-1" />
-                <span className="text-xs text-muted-foreground">×m²c</span>
-              </div>
-            </Field>
-            <Field label="M² vendibles (calculado)">
-              <div className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 flex items-center">
-                <span className="text-sm font-mono font-semibold text-blue-700">
-                  {r.saleableAreaM2.toLocaleString('es-CO', { maximumFractionDigits: 2 })} m²
-                </span>
-              </div>
-            </Field>
-            <Field label="Valor ventas totales (miles COP)">
-              <CopInput value={inputs.totalSales}
-                onChange={(v) => set('totalSales', v)}
-                className="h-7 border-blue-300 bg-blue-50 font-bold text-blue-800" />
-            </Field>
-            <Field label="Vlr M² vendible (calculado)">
-              <div className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2 flex items-center">
-                <span className="text-sm font-mono font-semibold text-blue-700">
-                  ${r.pricePerM2 > 0
-                    ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(r.pricePerM2)
-                    : '—'} /m²
-                </span>
-              </div>
-            </Field>
-
-            {/* Parámetros de fuentes */}
-            <Field label="Cuota inicial % (s/ventas)">
-              <div className="flex items-center gap-1.5">
-                <Input type="number" min={0} max={100} step={0.5}
-                  value={Math.round(inputs.initialPaymentPct * 100)}
-                  onChange={(e) => set('initialPaymentPct', (parseFloat(e.target.value) || 0) / 100)}
-                  className="h-7 text-sm text-right font-mono flex-1" />
-                <span className="text-xs text-muted-foreground">%</span>
-              </div>
-            </Field>
-            <Field label="% Crédito constructor (s/usos)">
-              <div className="flex items-center gap-1.5">
-                <Input type="number" min={0} max={100} step={0.5}
-                  value={Math.round(inputs.creditPct * 100 * 10) / 10}
-                  onChange={(e) => set('creditPct', (parseFloat(e.target.value) || 0) / 100)}
-                  className="h-7 text-sm text-right font-mono flex-1" />
-                <span className="text-xs text-muted-foreground">%</span>
-              </div>
-            </Field>
-            <Field label="% Lote (s/ventas)">
-              <div className="flex items-center gap-1.5">
-                <Input type="number" min={0} max={50} step={0.1}
-                  value={Math.round(inputs.lotePct * 100 * 10) / 10}
-                  onChange={(e) => set('lotePct', (parseFloat(e.target.value) || 0) / 100)}
-                  className="h-7 text-sm text-right font-mono flex-1" />
-                <span className="text-xs text-muted-foreground">%</span>
-              </div>
-            </Field>
-            <Field label="Otras fuentes (miles COP)">
-              <CopInput value={inputs.otherSources}
-                onChange={(v) => set('otherSources', v)} />
-            </Field>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 2. ESTRUCTURA DE COSTOS (tabla principal)                      */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <Card className="overflow-hidden">
-        <CardHeader className="bg-slate-700 text-white px-4 py-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-bold tracking-wide">
-              ESTRUCTURA DE COSTOS — Aportes a través de
-            </CardTitle>
-            <span className="text-[10px] text-slate-300 italic">Cifras en miles de COP</span>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="py-2 pl-3 pr-3 text-left font-semibold w-[40%]">CONCEPTO</th>
-                  <th className="py-2 px-2 text-right font-semibold w-[15%]">FIDEICOMISO</th>
-                  <th className="py-2 px-2 text-right font-semibold w-[15%]">CONSTRUCTOR</th>
-                  <th className="py-2 px-2 text-right font-semibold w-[15%]">TOTAL</th>
-                  <th className="py-2 pl-2 pr-3 text-right font-semibold w-[15%]">% S/VENTAS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* LOTE */}
-                <tr className="bg-amber-50 border-b border-amber-100">
-                  <td className="py-1.5 pl-3 pr-3 font-semibold text-amber-900">
-                    LOTE ({(inputs.lotePct * 100).toFixed(1)}% s/ventas)
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono font-semibold text-amber-800">
-                    {toMiles(r.lote.fid)}
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono text-slate-400">—</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-amber-900">
-                    {toMiles(r.lote.total)}
-                  </td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-amber-700">
-                    {fmtPct(r.lote.pctSales)}
-                  </td>
-                </tr>
-
-                {/* URBANISMO */}
-                <tr className="bg-orange-50 border-b border-orange-100">
-                  <td className="py-1 pl-3 pr-3 font-semibold text-orange-900">URBANISMO</td>
-                  <td className="py-1 px-1.5">
-                    <CopInput value={inputs.urbanismo.fid}
-                      onChange={(fid) => setCost('urbanismo', { ...inputs.urbanismo, fid })} />
-                  </td>
-                  <td className="py-1 px-1.5">
-                    <CopInput value={inputs.urbanismo.con}
-                      onChange={(con) => setCost('urbanismo', { ...inputs.urbanismo, con })} />
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-orange-900">
-                    {toMiles(r.urbanismo.total)}
-                  </td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-orange-700">
-                    {fmtPct(r.urbanismo.pctSales)}
-                  </td>
-                </tr>
-
-                {/* COSTOS DIRECTOS */}
-                <tr className="bg-blue-50 border-b border-blue-100">
-                  <td className="py-1 pl-3 pr-3 font-semibold text-blue-900">COSTOS DIRECTOS (EDIFICACIONES)</td>
-                  <td className="py-1 px-1.5">
-                    <CopInput value={inputs.directos.fid}
-                      onChange={(fid) => setCost('directos', { ...inputs.directos, fid })} />
-                  </td>
-                  <td className="py-1 px-1.5">
-                    <CopInput value={inputs.directos.con}
-                      onChange={(con) => setCost('directos', { ...inputs.directos, con })} />
-                  </td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-blue-900">
-                    {toMiles(r.directos.total)}
-                  </td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-blue-700">
-                    {fmtPct(r.directos.pctSales)}
-                  </td>
-                </tr>
-
-                {/* COSTOS INDIRECTOS — header */}
-                <tr className="bg-purple-100 border-b border-purple-200">
-                  <td className="py-1.5 pl-3 font-bold text-purple-900">COSTOS INDIRECTOS</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-purple-800">{toMiles(r.indirectos.subtotal.fid)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-purple-800">{toMiles(r.indirectos.subtotal.con)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-purple-900">{toMiles(r.indirectos.subtotal.total)}</td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-purple-700">{fmtPct(r.indirectos.subtotal.pctSales)}</td>
-                </tr>
-
-                {([
-                  ['honorariosAdmin',   'Honorarios Administración y Construcción'],
-                  ['disenoEstudios',    'Diseño, Estudios Técnicos, Asesorías'],
-                  ['interventoria',     'Interventoría y Supervisión Estructural'],
-                  ['licencias',         'Licencias (Urbanismo, Construcción, Ambiental)'],
-                  ['seguros',           'Seguros'],
-                  ['derechosImpuestos', 'Derechos e Impuestos'],
-                  ['conexionServicios', 'Conexión de Servicios'],
-                  ['imprevistos',       'Imprevistos'],
-                  ['previsionAlza',     'Previsión al Alza'],
-                ] as const).map(([key, label]) => (
-                  <EditableCostRow
-                    key={key} label={label} indent
-                    value={inputs[key] as CostItem}
-                    result={r.indirectos[key]}
-                    onChange={(v) => setCost(key, v)}
-                  />
-                ))}
-
-                {/* COSTOS FINANCIEROS — header */}
-                <tr className="bg-red-100 border-b border-red-200">
-                  <td className="py-1.5 pl-3 font-bold text-red-900">COSTOS FINANCIEROS</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-red-800">{toMiles(r.financieros.subtotal.fid)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-red-800">{toMiles(r.financieros.subtotal.con)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-red-900">{toMiles(r.financieros.subtotal.total)}</td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-red-700">{fmtPct(r.financieros.subtotal.pctSales)}</td>
-                </tr>
-                {([
-                  ['fiducia',          'Fiducia'],
-                  ['interesesCredito', 'Intereses Crédito (Constructor, Puentes)'],
-                ] as const).map(([key, label]) => (
-                  <EditableCostRow
-                    key={key} label={label} indent
-                    value={inputs[key] as CostItem}
-                    result={r.financieros[key]}
-                    onChange={(v) => setCost(key, v)}
-                  />
-                ))}
-
-                {/* COSTOS DE VENTAS — header */}
-                <tr className="bg-green-100 border-b border-green-200">
-                  <td className="py-1.5 pl-3 font-bold text-green-900">COSTOS DE VENTAS</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-green-800">{toMiles(r.ventasCostos.subtotal.fid)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-green-800">{toMiles(r.ventasCostos.subtotal.con)}</td>
-                  <td className="py-1.5 px-2 text-right font-mono font-bold text-green-900">{toMiles(r.ventasCostos.subtotal.total)}</td>
-                  <td className="py-1.5 pl-2 pr-3 text-right font-mono text-green-700">{fmtPct(r.ventasCostos.subtotal.pctSales)}</td>
-                </tr>
-                {([
-                  ['honorariosVentas',     'Honorarios de Ventas'],
-                  ['honorariosGerencia',   'Honorarios de Gerencia'],
-                  ['disenoArquitectonico', 'Honorarios Diseño/Arquitectónicos'],
-                  ['publicidad',           'Promoción y Publicidad'],
-                  ['notariales',           'Notariales (Escrituración, Transferencia lote)'],
-                ] as const).map(([key, label]) => (
-                  <EditableCostRow
-                    key={key} label={label} indent
-                    value={inputs[key] as CostItem}
-                    result={r.ventasCostos[key]}
-                    onChange={(v) => setCost(key, v)}
-                  />
-                ))}
-
-                {/* TOTAL USOS */}
-                <tr className="bg-slate-800 text-white font-bold border-t-2 border-slate-600">
-                  <td className="py-2.5 pl-3">TOTAL USOS</td>
-                  <td className="py-2.5 px-2 text-right font-mono">{toMiles(r.totalUsos.fid)}</td>
-                  <td className="py-2.5 px-2 text-right font-mono">{toMiles(r.totalUsos.con)}</td>
-                  <td className="py-2.5 px-2 text-right font-mono text-blue-300">{toMiles(r.totalUsos.total)}</td>
-                  <td className="py-2.5 pl-2 pr-3 text-right font-mono text-blue-300">{fmtPct(r.totalUsos.pctSales)}</td>
-                </tr>
-
-                {/* VENTAS TOTALES */}
-                <tr className="bg-slate-600 text-white font-semibold">
-                  <td className="py-2 pl-3">VENTAS / APORTES TOTALES</td>
-                  <td className="py-2 px-2 text-right font-mono">{toMiles(r.totalSales)}</td>
-                  <td className="py-2 px-2 text-right font-mono text-slate-300">—</td>
-                  <td className="py-2 px-2 text-right font-mono">{toMiles(r.totalSales)}</td>
-                  <td className="py-2 pl-2 pr-3 text-right font-mono">100,00%</td>
-                </tr>
-
-                {/* UTILIDAD */}
-                <tr className={`font-bold border-t-2 ${r.utilidad >= 0 ? 'bg-green-700' : 'bg-red-700'} text-white`}>
-                  <td className="py-2.5 pl-3">
-                    UTILIDAD ESTIMADA
-                    <span className="ml-2 text-[10px] font-normal opacity-80">(miles COP)</span>
-                  </td>
-                  <td className="py-2.5 px-2" />
-                  <td className="py-2.5 px-2" />
-                  <td className="py-2.5 px-2 text-right font-mono text-lg">
-                    {new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Math.round(r.utilidadMiles))}
-                  </td>
-                  <td className={`py-2.5 pl-2 pr-3 text-right font-mono ${r.utilidadPct >= 0.12 ? 'text-green-200' : 'text-yellow-200'}`}>
-                    {fmtPct(r.utilidadPct)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 3. RESUMEN + FUENTES Y USOS                                    */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        {/* Resumen de costos */}
-        <Card>
-          <CardHeader className="pb-2 pt-3 bg-slate-700 text-white rounded-t-xl">
-            <CardTitle className="text-xs font-bold tracking-wider">RESUMEN DE COSTOS</CardTitle>
-          </CardHeader>
+      {/* ═══════ PREVIEW INLINE ══════════════════════════════════════════ */}
+      {showReport && (
+        <Card className="overflow-hidden">
           <CardContent className="p-0">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-100 text-slate-600">
-                  <th className="py-1.5 pl-3 text-left font-semibold">Concepto</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">Miles COP</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">% Ventas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {[
-                  { label: 'Lote',                 val: r.lote.total,               pct: r.lote.pctSales,               color: 'text-amber-700'  },
-                  { label: 'Urbanismo',             val: r.urbanismo.total,          pct: r.urbanismo.pctSales,          color: 'text-orange-700' },
-                  { label: 'Costos Directos',       val: r.directos.total,           pct: r.directos.pctSales,           color: 'text-blue-700'   },
-                  { label: 'Costos Indirectos',     val: r.indirectos.subtotal.total,pct: r.indirectos.subtotal.pctSales,color: 'text-purple-700' },
-                  { label: 'Costos Financieros',   val: r.financieros.subtotal.total,pct: r.financieros.subtotal.pctSales,color:'text-red-700'   },
-                  { label: 'Costos de Ventas',     val: r.ventasCostos.subtotal.total,pct:r.ventasCostos.subtotal.pctSales,color:'text-green-700'},
-                ].map(({ label, val, pct, color }) => (
-                  <tr key={label} className="hover:bg-slate-50">
-                    <td className={`py-2 pl-3 ${color} font-medium`}>{label}</td>
-                    <td className="py-2 pr-3 text-right font-mono">{toMiles(val)}</td>
-                    <td className="py-2 pr-3 text-right font-mono text-slate-500">{fmtPct(pct)}</td>
-                  </tr>
-                ))}
-                <tr className="bg-slate-800 text-white font-bold">
-                  <td className="py-2 pl-3">TOTAL USOS</td>
-                  <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalUsos.total)}</td>
-                  <td className="py-2 pr-3 text-right font-mono">{fmtPct(r.totalUsos.pctSales)}</td>
-                </tr>
-                <tr className="bg-slate-100 text-slate-600">
-                  <td className="py-2 pl-3 text-xs">Total costos sin lote</td>
-                  <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalCostSinLote)}</td>
-                  <td className="py-2 pr-3 text-right font-mono">{fmtPct(r.totalCostSinLote / r.totalSales)}</td>
-                </tr>
-              </tbody>
-            </table>
+            <iframe
+              ref={reportRef}
+              srcDoc={buildInteractiveHtmlReport(inputs, r)}
+              className="w-full border-0"
+              style={{ height: '80vh' }}
+              title="Preview del reporte"
+            />
           </CardContent>
         </Card>
+      )}
 
-        {/* Fuentes y Usos */}
+      {/* ═══════ 1. DATOS GENERALES ════════════════════════════════════ */}
+      <CollapsibleSection title="Datos Generales del Proyecto">
         <Card>
-          <CardHeader className="pb-2 pt-3 bg-blue-800 text-white rounded-t-xl">
-            <CardTitle className="text-xs font-bold tracking-wider">FUENTES Y USOS — Cuadre de financiación</CardTitle>
+          <CardContent className="pt-4 pb-4">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
+              <Field label="Promotor">
+                <Input
+                  value={inputs.promoter}
+                  onChange={(e) => set('promoter', e.target.value)}
+                  className="h-7 text-sm"
+                />
+              </Field>
+              <Field label="Proyecto">
+                <Input
+                  value={inputs.projectName}
+                  onChange={(e) => set('projectName', e.target.value)}
+                  className="h-7 text-sm"
+                />
+              </Field>
+              <Field label="Ciudad">
+                <Input
+                  value={inputs.city}
+                  onChange={(e) => set('city', e.target.value)}
+                  className="h-7 text-sm"
+                />
+              </Field>
+              <Field label="Sistema constructivo">
+                <Input
+                  value={inputs.constructionSystem}
+                  onChange={(e) => set('constructionSystem', e.target.value)}
+                  className="h-7 text-sm"
+                />
+              </Field>
+              <Field label="# Total unidades">
+                <Input
+                  type="number"
+                  min={1}
+                  value={inputs.totalUnits}
+                  onChange={(e) => set('totalUnits', Number(e.target.value) || 0)}
+                  className="h-7 text-sm text-right font-mono"
+                />
+              </Field>
+              <Field label="Estrato">
+                <Input
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={inputs.stratum}
+                  onChange={(e) => set('stratum', Number(e.target.value) || 1)}
+                  className="h-7 text-sm text-right font-mono"
+                />
+              </Field>
+              <Field label="Parqueaderos">
+                <Input
+                  value={inputs.parkingType}
+                  onChange={(e) => set('parkingType', e.target.value)}
+                  className="h-7 text-sm"
+                />
+              </Field>
+              <Field label="M² construido">
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={inputs.builtAreaM2}
+                  onChange={(e) => set('builtAreaM2', parseFloat(e.target.value) || 0)}
+                  className="h-7 text-sm text-right font-mono"
+                />
+              </Field>
+              <Field label="Factor área vendible">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0.5}
+                    max={3}
+                    step={0.001}
+                    value={inputs.saleableFactorPct}
+                    onChange={(e) => set('saleableFactorPct', parseFloat(e.target.value) || 1)}
+                    className="h-7 text-sm text-right font-mono flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground">×m²c</span>
+                </div>
+              </Field>
+              <Field label="M² vendibles (calculado)">
+                <div className="h-7 rounded-md border border-border bg-muted/50 px-2 flex items-center">
+                  <span className="text-sm font-mono font-semibold text-primary">
+                    {r.saleableAreaM2.toLocaleString('es-CO', {
+                      maximumFractionDigits: 2,
+                    })}{' '}
+                    m²
+                  </span>
+                </div>
+              </Field>
+              <Field label="Valor ventas totales (miles COP)">
+                <CopInput
+                  value={inputs.totalSales}
+                  onChange={(v) => set('totalSales', v)}
+                  className="h-7 border-primary/30 bg-primary/5 font-bold text-primary"
+                />
+              </Field>
+              <Field label="Vlr M² vendible (calculado)">
+                <div className="h-7 rounded-md border border-border bg-muted/50 px-2 flex items-center">
+                  <span className="text-sm font-mono font-semibold text-primary">
+                    $
+                    {r.pricePerM2 > 0
+                      ? new Intl.NumberFormat('es-CO', {
+                          maximumFractionDigits: 0,
+                        }).format(r.pricePerM2)
+                      : '—'}{' '}
+                    /m²
+                  </span>
+                </div>
+              </Field>
+              <Field label="Cuota inicial % (s/ventas)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={Math.round(inputs.initialPaymentPct * 100)}
+                    onChange={(e) =>
+                      set('initialPaymentPct', (parseFloat(e.target.value) || 0) / 100)
+                    }
+                    className="h-7 text-sm text-right font-mono flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              </Field>
+              <Field label="% Crédito constructor (s/usos)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={Math.round(inputs.creditPct * 100 * 10) / 10}
+                    onChange={(e) => set('creditPct', (parseFloat(e.target.value) || 0) / 100)}
+                    className="h-7 text-sm text-right font-mono flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              </Field>
+              <Field label="% Lote (s/ventas)">
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={50}
+                    step={0.1}
+                    value={Math.round(inputs.lotePct * 100 * 10) / 10}
+                    onChange={(e) => set('lotePct', (parseFloat(e.target.value) || 0) / 100)}
+                    className="h-7 text-sm text-right font-mono flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground">%</span>
+                </div>
+              </Field>
+              <Field label="Otras fuentes (miles COP)">
+                <CopInput value={inputs.otherSources} onChange={(v) => set('otherSources', v)} />
+              </Field>
+            </div>
+          </CardContent>
+        </Card>
+      </CollapsibleSection>
+
+      {/* ═══════ 2. ESTRUCTURA DE COSTOS ═══════════════════════════════ */}
+      <CollapsibleSection title="Estructura de Costos">
+        <Card className="overflow-hidden">
+          <CardHeader className="bg-primary text-primary-foreground px-4 py-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-bold tracking-wide flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" />
+                ESTRUCTURA DE COSTOS — Aportes a través de
+              </CardTitle>
+              <span className="text-[10px] opacity-70 italic">Cifras en miles de COP</span>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-blue-100 text-blue-800">
-                  <th className="py-1.5 pl-3 text-left font-semibold">Fuente</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">Miles COP</th>
-                  <th className="py-1.5 pr-3 text-right font-semibold">% Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {[
-                  { label: 'Aporte de Socios (patrimonio)',   val: r.aportesSocios,      color: 'text-indigo-700' },
-                  { label: 'Crédito Constructor',            val: r.creditoConstructor, color: 'text-blue-700'   },
-                  { label: `Cuotas Iniciales (${Math.round(inputs.initialPaymentPct*100)}% s/ventas)`, val: r.cuotasIniciales, color: 'text-teal-700' },
-                  { label: 'Otras Fuentes',                  val: r.totalSales - r.aportesSocios - r.creditoConstructor - r.cuotasIniciales, color: 'text-slate-500' },
-                ].map(({ label, val, color }) => (
-                  <tr key={label} className="hover:bg-slate-50">
-                    <td className={`py-2 pl-3 ${color} font-medium`}>{label}</td>
-                    <td className="py-2 pr-3 text-right font-mono">{toMiles(val)}</td>
-                    <td className="py-2 pr-3 text-right font-mono text-slate-500">
-                      {r.totalUsos.total > 0 ? fmtPct(val / r.totalUsos.total) : '—'}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-primary/90 text-primary-foreground">
+                    <th className="py-2 pl-3 pr-3 text-left font-semibold w-[40%]">CONCEPTO</th>
+                    <th className="py-2 px-2 text-right font-semibold w-[15%]">FIDEICOMISO</th>
+                    <th className="py-2 px-2 text-right font-semibold w-[15%]">CONSTRUCTOR</th>
+                    <th className="py-2 px-2 text-right font-semibold w-[15%]">TOTAL</th>
+                    <th className="py-2 pl-2 pr-3 text-right font-semibold w-[15%]">% S/VENTAS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* LOTE */}
+                  <tr className="bg-warning/10 border-b border-warning/20">
+                    <td className="py-1.5 pl-3 pr-3 font-semibold text-warning-foreground dark:text-warning">
+                      LOTE ({(inputs.lotePct * 100).toFixed(1)}% s/ventas)
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-semibold">
+                      {toMiles(r.lote.fid)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono text-muted-foreground">—</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.lote.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.lote.pctSales)}
                     </td>
                   </tr>
-                ))}
-                <tr className="bg-blue-800 text-white font-bold">
-                  <td className="py-2 pl-3">TOTAL FUENTES</td>
-                  <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalFuentes)}</td>
-                  <td className="py-2 pr-3 text-right font-mono">100,00%</td>
-                </tr>
-                <tr className="bg-slate-800 text-white font-bold">
-                  <td className="py-2 pl-3">TOTAL USOS</td>
-                  <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalUsos.total)}</td>
-                  <td className="py-2 pr-3 text-right font-mono">{fmtPct(r.totalUsos.pctSales)}</td>
-                </tr>
-                <tr className={`font-bold ${Math.abs(r.balance) < 1000 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
-                  <td className="py-2 pl-3 text-xs">Balance Fuentes − Usos</td>
-                  <td className="py-2 pr-3 text-right font-mono">
-                    {toMiles(Math.abs(r.balance))} {r.balance < 0 ? '(déficit)' : '(superávit)'}
-                  </td>
-                  <td className="py-2 pr-3 text-right font-mono">
-                    {Math.abs(r.balance) < 1000 ? '✓ Cuadrado' : '⚠ Revisar'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+
+                  {/* URBANISMO */}
+                  <tr className="bg-orange-500/10 border-b border-orange-500/20">
+                    <td className="py-1 pl-3 pr-3 font-semibold">URBANISMO</td>
+                    <td className="py-1 px-1.5">
+                      <CopInput
+                        value={inputs.urbanismo.fid}
+                        onChange={(fid) => setCost('urbanismo', { ...inputs.urbanismo, fid })}
+                      />
+                    </td>
+                    <td className="py-1 px-1.5">
+                      <CopInput
+                        value={inputs.urbanismo.con}
+                        onChange={(con) => setCost('urbanismo', { ...inputs.urbanismo, con })}
+                      />
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.urbanismo.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.urbanismo.pctSales)}
+                    </td>
+                  </tr>
+
+                  {/* COSTOS DIRECTOS */}
+                  <tr className="bg-info/10 border-b border-info/20">
+                    <td className="py-1 pl-3 pr-3 font-semibold">
+                      COSTOS DIRECTOS (EDIFICACIONES)
+                    </td>
+                    <td className="py-1 px-1.5">
+                      <CopInput
+                        value={inputs.directos.fid}
+                        onChange={(fid) => setCost('directos', { ...inputs.directos, fid })}
+                      />
+                    </td>
+                    <td className="py-1 px-1.5">
+                      <CopInput
+                        value={inputs.directos.con}
+                        onChange={(con) => setCost('directos', { ...inputs.directos, con })}
+                      />
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.directos.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.directos.pctSales)}
+                    </td>
+                  </tr>
+
+                  {/* COSTOS INDIRECTOS */}
+                  <tr className="bg-purple-500/10 border-b border-purple-500/20">
+                    <td className="py-1.5 pl-3 font-bold">COSTOS INDIRECTOS</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.indirectos.subtotal.fid)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.indirectos.subtotal.con)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.indirectos.subtotal.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.indirectos.subtotal.pctSales)}
+                    </td>
+                  </tr>
+
+                  {(
+                    [
+                      ['honorariosAdmin', 'Honorarios Administración y Construcción'],
+                      ['disenoEstudios', 'Diseño, Estudios Técnicos, Asesorías'],
+                      ['interventoria', 'Interventoría y Supervisión Estructural'],
+                      ['licencias', 'Licencias (Urbanismo, Construcción, Ambiental)'],
+                      ['seguros', 'Seguros'],
+                      ['derechosImpuestos', 'Derechos e Impuestos'],
+                      ['conexionServicios', 'Conexión de Servicios'],
+                      ['imprevistos', 'Imprevistos'],
+                      ['previsionAlza', 'Previsión al Alza'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <EditableCostRow
+                      key={key}
+                      label={label}
+                      indent
+                      value={inputs[key] as CostItem}
+                      result={r.indirectos[key]}
+                      onChange={(v) => setCost(key, v)}
+                    />
+                  ))}
+
+                  {/* COSTOS FINANCIEROS */}
+                  <tr className="bg-danger/10 border-b border-danger/20">
+                    <td className="py-1.5 pl-3 font-bold">COSTOS FINANCIEROS</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.financieros.subtotal.fid)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.financieros.subtotal.con)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.financieros.subtotal.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.financieros.subtotal.pctSales)}
+                    </td>
+                  </tr>
+                  {(
+                    [
+                      ['fiducia', 'Fiducia'],
+                      ['interesesCredito', 'Intereses Crédito (Constructor, Puentes)'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <EditableCostRow
+                      key={key}
+                      label={label}
+                      indent
+                      value={inputs[key] as CostItem}
+                      result={r.financieros[key]}
+                      onChange={(v) => setCost(key, v)}
+                    />
+                  ))}
+
+                  {/* COSTOS DE VENTAS */}
+                  <tr className="bg-success/10 border-b border-success/20">
+                    <td className="py-1.5 pl-3 font-bold">COSTOS DE VENTAS</td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.ventasCostos.subtotal.fid)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.ventasCostos.subtotal.con)}
+                    </td>
+                    <td className="py-1.5 px-2 text-right font-mono font-bold">
+                      {toMiles(r.ventasCostos.subtotal.total)}
+                    </td>
+                    <td className="py-1.5 pl-2 pr-3 text-right font-mono text-muted-foreground">
+                      {fmtPct(r.ventasCostos.subtotal.pctSales)}
+                    </td>
+                  </tr>
+                  {(
+                    [
+                      ['honorariosVentas', 'Honorarios de Ventas'],
+                      ['honorariosGerencia', 'Honorarios de Gerencia'],
+                      ['disenoArquitectonico', 'Honorarios Diseño/Arquitectónicos'],
+                      ['publicidad', 'Promoción y Publicidad'],
+                      ['notariales', 'Notariales (Escrituración, Transferencia lote)'],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <EditableCostRow
+                      key={key}
+                      label={label}
+                      indent
+                      value={inputs[key] as CostItem}
+                      result={r.ventasCostos[key]}
+                      onChange={(v) => setCost(key, v)}
+                    />
+                  ))}
+
+                  {/* TOTAL USOS */}
+                  <tr className="bg-primary text-primary-foreground font-bold border-t-2">
+                    <td className="py-2.5 pl-3">TOTAL USOS</td>
+                    <td className="py-2.5 px-2 text-right font-mono">{toMiles(r.totalUsos.fid)}</td>
+                    <td className="py-2.5 px-2 text-right font-mono">{toMiles(r.totalUsos.con)}</td>
+                    <td className="py-2.5 px-2 text-right font-mono">
+                      {toMiles(r.totalUsos.total)}
+                    </td>
+                    <td className="py-2.5 pl-2 pr-3 text-right font-mono">
+                      {fmtPct(r.totalUsos.pctSales)}
+                    </td>
+                  </tr>
+
+                  {/* VENTAS */}
+                  <tr className="bg-muted font-semibold">
+                    <td className="py-2 pl-3">VENTAS / APORTES TOTALES</td>
+                    <td className="py-2 px-2 text-right font-mono">{toMiles(r.totalSales)}</td>
+                    <td className="py-2 px-2 text-right font-mono text-muted-foreground">—</td>
+                    <td className="py-2 px-2 text-right font-mono">{toMiles(r.totalSales)}</td>
+                    <td className="py-2 pl-2 pr-3 text-right font-mono">100,00%</td>
+                  </tr>
+
+                  {/* UTILIDAD */}
+                  <tr
+                    className={`font-bold border-t-2 ${r.utilidad >= 0 ? 'bg-success text-success-foreground' : 'bg-danger text-danger-foreground'}`}
+                  >
+                    <td className="py-2.5 pl-3">
+                      UTILIDAD ESTIMADA
+                      <span className="ml-2 text-[10px] font-normal opacity-80">(miles COP)</span>
+                    </td>
+                    <td className="py-2.5 px-2" />
+                    <td className="py-2.5 px-2" />
+                    <td className="py-2.5 px-2 text-right font-mono text-lg">
+                      {new Intl.NumberFormat('es-CO', {
+                        maximumFractionDigits: 0,
+                      }).format(Math.round(r.utilidadMiles))}
+                    </td>
+                    <td className="py-2.5 pl-2 pr-3 text-right font-mono">
+                      {fmtPct(r.utilidadPct)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
-      </div>
+      </CollapsibleSection>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 4. INDICADORES FINANCIEROS                                     */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {[
-          {
-            label: 'Utilidad estimada',
-            value: `$${toMiles(r.utilidad)}`,
-            sub:   'miles COP',
-            color: r.utilidad >= 0 ? 'text-green-700' : 'text-red-700',
-            bg:    r.utilidad >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200',
-          },
-          {
-            label: '% Margen s/ventas',
-            value: fmtPct(r.utilidadPct),
-            sub:   r.utilidadPct >= 0.12 ? '✓ Viable (≥12%)' : '⚠ Bajo (<12%)',
-            color: r.utilidadPct >= 0.12 ? 'text-green-700' : 'text-amber-700',
-            bg:    r.utilidadPct >= 0.12 ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200',
-          },
-          {
-            label: 'ROI s/inversión',
-            value: `${r.roi.toFixed(1)}%`,
-            sub:   'utilidad / usos totales',
-            color: 'text-blue-700',
-            bg:    'bg-blue-50 border-blue-200',
-          },
-          {
-            label: 'Punto equilibrio',
-            value: `${r.breakEvenUnits} uds`,
-            sub:   `${fmtPct(r.breakEvenPct)} de ${inputs.totalUnits}`,
-            color: r.breakEvenPct <= 0.9 ? 'text-teal-700' : 'text-red-700',
-            bg:    r.breakEvenPct <= 0.9 ? 'bg-teal-50 border-teal-200' : 'bg-red-50 border-red-200',
-          },
-          {
-            label: 'Precio / unidad',
-            value: `$${toMiles(r.pricePerUnit)}`,
-            sub:   'miles COP / unidad',
-            color: 'text-slate-700',
-            bg:    'bg-slate-50 border-slate-200',
-          },
-          {
-            label: 'Costo / m² vendible',
-            value: `$${r.saleableAreaM2 > 0
-              ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(r.totalUsos.total / r.saleableAreaM2)
-              : '—'}`,
-            sub:   'COP / m²',
-            color: 'text-slate-700',
-            bg:    'bg-slate-50 border-slate-200',
-          },
-        ].map(({ label, value, sub, color, bg }) => (
-          <div key={label} className={`rounded-xl border px-3 py-3 ${bg}`}>
-            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide leading-tight mb-1">{label}</p>
-            <p className={`text-lg font-bold leading-none ${color}`}>{value}</p>
-            <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>
-          </div>
-        ))}
-      </div>
+      {/* ═══════ 3. RESUMEN + FUENTES ═════════════════════════════════ */}
+      <CollapsibleSection title="Resumen y Fuentes">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          {/* Resumen de costos */}
+          <Card>
+            <CardHeader className="pb-2 pt-3 bg-primary text-primary-foreground rounded-t-xl">
+              <CardTitle className="text-xs font-bold tracking-wider flex items-center gap-2">
+                <Calculator className="h-3.5 w-3.5" />
+                RESUMEN DE COSTOS
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-muted text-muted-foreground">
+                    <th className="py-1.5 pl-3 text-left font-semibold">Concepto</th>
+                    <th className="py-1.5 pr-3 text-right font-semibold">Miles COP</th>
+                    <th className="py-1.5 pr-3 text-right font-semibold">% Ventas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[
+                    { label: 'Lote', val: r.lote.total, pct: r.lote.pctSales },
+                    { label: 'Urbanismo', val: r.urbanismo.total, pct: r.urbanismo.pctSales },
+                    { label: 'Costos Directos', val: r.directos.total, pct: r.directos.pctSales },
+                    {
+                      label: 'Costos Indirectos',
+                      val: r.indirectos.subtotal.total,
+                      pct: r.indirectos.subtotal.pctSales,
+                    },
+                    {
+                      label: 'Costos Financieros',
+                      val: r.financieros.subtotal.total,
+                      pct: r.financieros.subtotal.pctSales,
+                    },
+                    {
+                      label: 'Costos de Ventas',
+                      val: r.ventasCostos.subtotal.total,
+                      pct: r.ventasCostos.subtotal.pctSales,
+                    },
+                  ].map(({ label, val, pct }) => (
+                    <tr key={label} className="hover:bg-muted/50">
+                      <td className="py-2 pl-3 font-medium">{label}</td>
+                      <td className="py-2 pr-3 text-right font-mono">{toMiles(val)}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-muted-foreground">
+                        {fmtPct(pct)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-primary text-primary-foreground font-bold">
+                    <td className="py-2 pl-3">TOTAL USOS</td>
+                    <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalUsos.total)}</td>
+                    <td className="py-2 pr-3 text-right font-mono">
+                      {fmtPct(r.totalUsos.pctSales)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 5. NOTA METODOLÓGICA                                           */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <Card className="bg-slate-50 border-slate-200">
+          {/* Fuentes y Usos */}
+          <Card>
+            <CardHeader className="pb-2 pt-3 bg-info text-info-foreground rounded-t-xl">
+              <CardTitle className="text-xs font-bold tracking-wider flex items-center gap-2">
+                <TrendingUp className="h-3.5 w-3.5" />
+                FUENTES Y USOS
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-info/10 text-info">
+                    <th className="py-1.5 pl-3 text-left font-semibold">Fuente</th>
+                    <th className="py-1.5 pr-3 text-right font-semibold">Miles COP</th>
+                    <th className="py-1.5 pr-3 text-right font-semibold">% Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[
+                    { label: 'Aporte de Socios', val: r.aportesSocios },
+                    { label: 'Crédito Constructor', val: r.creditoConstructor },
+                    {
+                      label: `Cuotas Iniciales (${Math.round(inputs.initialPaymentPct * 100)}%)`,
+                      val: r.cuotasIniciales,
+                    },
+                  ].map(({ label, val }) => (
+                    <tr key={label} className="hover:bg-muted/50">
+                      <td className="py-2 pl-3 font-medium">{label}</td>
+                      <td className="py-2 pr-3 text-right font-mono">{toMiles(val)}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-muted-foreground">
+                        {r.totalUsos.total > 0 ? fmtPct(val / r.totalUsos.total) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-info text-info-foreground font-bold">
+                    <td className="py-2 pl-3">TOTAL FUENTES</td>
+                    <td className="py-2 pr-3 text-right font-mono">{toMiles(r.totalFuentes)}</td>
+                    <td className="py-2 pr-3 text-right font-mono">100,00%</td>
+                  </tr>
+                  <tr
+                    className={`font-bold ${Math.abs(r.balance) < 1000 ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}
+                  >
+                    <td className="py-2 pl-3 text-xs">Balance Fuentes − Usos</td>
+                    <td className="py-2 pr-3 text-right font-mono">
+                      {Math.abs(r.balance) < 1000
+                        ? '✓ Cuadrado'
+                        : `${toMiles(Math.abs(r.balance))} ${r.balance < 0 ? '(déficit)' : '(superávit)'}`}
+                    </td>
+                    <td className="py-2 pr-3 text-right font-mono">
+                      {Math.abs(r.balance) < 1000 ? '✓' : '⚠'}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══════ 4. INDICADORES ═══════════════════════════════════════ */}
+      <CollapsibleSection title="Indicadores Financieros">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            {
+              label: 'Utilidad estimada',
+              value: `$${toMiles(r.utilidad)}`,
+              sub: 'miles COP',
+              ok: r.utilidad >= 0,
+            },
+            {
+              label: '% Margen s/ventas',
+              value: fmtPct(r.utilidadPct),
+              sub: r.utilidadPct >= 0.12 ? '✓ Viable (≥12%)' : '⚠ Bajo (<12%)',
+              ok: r.utilidadPct >= 0.12,
+            },
+            {
+              label: 'ROI s/inversión',
+              value: `${r.roi.toFixed(1)}%`,
+              sub: 'utilidad / usos totales',
+              ok: true,
+            },
+            {
+              label: 'Punto equilibrio',
+              value: `${r.breakEvenUnits} uds`,
+              sub: `${fmtPct(r.breakEvenPct)} de ${inputs.totalUnits}`,
+              ok: r.breakEvenPct <= 0.9,
+            },
+            {
+              label: 'Precio / unidad',
+              value: `$${toMiles(r.pricePerUnit)}`,
+              sub: 'miles COP / unidad',
+              ok: true,
+            },
+            {
+              label: 'Costo / m² vendible',
+              value: `$${r.saleableAreaM2 > 0 ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(r.totalUsos.total / r.saleableAreaM2) : '—'}`,
+              sub: 'COP / m²',
+              ok: true,
+            },
+          ].map(({ label, value, sub, ok }) => (
+            <div
+              key={label}
+              className={`rounded-xl border px-3 py-3 transition-colors ${ok ? 'bg-success/5 border-success/20' : 'bg-danger/5 border-danger/20'}`}
+            >
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide leading-tight mb-1">
+                {label}
+              </p>
+              <p
+                className={`text-lg font-bold leading-none ${ok ? 'text-success' : 'text-danger'}`}
+              >
+                {value}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
+
+      {/* ═══════ 5. NOTA METODOLÓGICA ═══════════════════════════════ */}
+      <Card className="bg-muted/50 border-border">
         <CardContent className="pt-3 pb-3">
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            <span className="font-semibold text-slate-600">Fórmulas aplicadas:</span>{' '}
-            Lote = %Lote × Ventas · M²Vendibles = M²Construido × Factor ·
-            Vlr/m² = Ventas ÷ M²Vendibles · Total Usos = Σ(todos los costos) ·
-            Utilidad = Ventas − Total Usos · Cuotas Iniciales = %CuotaInicial × Ventas ·
-            Crédito Constructor = %Crédito × Total Usos · Aporte Socios = Total Usos − Cuotas − Crédito − Otras ·
-            Punto Equilibrio (uds) = ⌈Total Usos ÷ (Ventas ÷ #Unidades)⌉ ·
-            ROI = Utilidad ÷ Total Usos × 100.{' '}
-            <span className="text-amber-600 font-medium">Cifras en miles de COP</span> según modelo CREDICORP.
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            <span className="font-semibold">Fórmulas aplicadas:</span> Lote = %Lote × Ventas ·
+            M²Vendibles = M²Construido × Factor · Vlr/m² = Ventas ÷ M²Vendibles · Total Usos =
+            Σ(todos los costos) · Utilidad = Ventas − Total Usos · Punto Equilibrio (uds) = ⌈Total
+            Usos ÷ (Ventas ÷ #Unidades)⌉ · ROI = Utilidad ÷ Total Usos × 100.{' '}
+            <span className="text-warning font-medium">Cifras en miles de COP</span> según modelo
+            CREDICORP.
           </p>
         </CardContent>
       </Card>
@@ -694,171 +913,560 @@ export default function FeasibilityPage({ params }: { params: { id: string } }) 
   );
 }
 
-// ─── Componente auxiliar Field ────────────────────────────────────────────────
+// ─── Generador de Reporte HTML Interactivo ────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </Label>
-      {children}
-    </div>
-  );
-}
+function buildInteractiveHtmlReport(inp: FeasibilityInputs, r: FeasibilityResults): string {
+  const fmtK = (n: number) => new Intl.NumberFormat('es-CO').format(Math.round(n / 1000));
+  const fP = (f: number) => `${(f * 100).toFixed(2)}%`;
+  const date = new Date().toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
 
-// ─── Generador de reporte HTML ────────────────────────────────────────────────
+  // Build cost distribution data for CSS chart
+  const costParts = [
+    { label: 'Lote', val: r.lote.total, color: '#f59e0b' },
+    { label: 'Urbanismo', val: r.urbanismo.total, color: '#f97316' },
+    { label: 'Directos', val: r.directos.total, color: '#3b82f6' },
+    { label: 'Indirectos', val: r.indirectos.subtotal.total, color: '#a855f7' },
+    { label: 'Financieros', val: r.financieros.subtotal.total, color: '#ef4444' },
+    { label: 'Ventas', val: r.ventasCostos.subtotal.total, color: '#22c55e' },
+  ];
+  const maxCost = Math.max(...costParts.map((p) => p.val));
 
-function buildHtmlReport(inp: FeasibilityInputs, r: ReturnType<typeof calculate>): string {
-  const fmtK = (n: number) =>
-    new Intl.NumberFormat('es-CO').format(Math.round(n / 1000));
+  const sourceParts = [
+    { label: 'Aportes Socios', val: r.aportesSocios, color: '#6366f1' },
+    { label: 'Crédito Constructor', val: r.creditoConstructor, color: '#3b82f6' },
+    { label: 'Cuotas Iniciales', val: r.cuotasIniciales, color: '#14b8a6' },
+  ];
 
-  const row = (label: string, fid: number, con: number, total: number, pct: number, indent = false) => `
-    <tr>
-      <td style="padding:4px 8px;${indent ? 'padding-left:24px;color:#555' : 'font-weight:600'}">${indent ? '· ' : ''}${label}</td>
-      <td style="padding:4px 8px;text-align:right;font-family:monospace">${fmtK(fid)}</td>
-      <td style="padding:4px 8px;text-align:right;font-family:monospace">${fmtK(con)}</td>
-      <td style="padding:4px 8px;text-align:right;font-family:monospace;font-weight:600">${fmtK(total)}</td>
-      <td style="padding:4px 8px;text-align:right;font-family:monospace;color:#64748b">${pct > 0 ? fmtPct(pct) : '—'}</td>
+  const indirectRows = [
+    ['Honorarios Admin.', r.indirectos.honorariosAdmin],
+    ['Diseño y Estudios', r.indirectos.disenoEstudios],
+    ['Interventoría', r.indirectos.interventoria],
+    ['Licencias', r.indirectos.licencias],
+    ['Seguros', r.indirectos.seguros],
+    ['Derechos e Impuestos', r.indirectos.derechosImpuestos],
+    ['Conexión Servicios', r.indirectos.conexionServicios],
+    ['Imprevistos', r.indirectos.imprevistos],
+    ['Previsión al Alza', r.indirectos.previsionAlza],
+  ] as const;
+
+  const finRows = [
+    ['Fiducia', r.financieros.fiducia],
+    ['Intereses Crédito', r.financieros.interesesCredito],
+  ] as const;
+
+  const ventasRows = [
+    ['Hon. Ventas', r.ventasCostos.honorariosVentas],
+    ['Hon. Gerencia', r.ventasCostos.honorariosGerencia],
+    ['Diseño Arq.', r.ventasCostos.disenoArquitectonico],
+    ['Publicidad', r.ventasCostos.publicidad],
+    ['Notariales', r.ventasCostos.notariales],
+  ] as const;
+
+  const mkRow = (label: string, lr: LineResult, indent = false) =>
+    `<tr class="detail-row ${indent ? 'indent' : ''}">
+      <td>${indent ? '<span class="dot">·</span>' : ''}${label}</td>
+      <td class="num">${fmtK(lr.fid)}</td>
+      <td class="num">${fmtK(lr.con)}</td>
+      <td class="num bold">${fmtK(lr.total)}</td>
+      <td class="num muted">${lr.pctSales > 0 ? fP(lr.pctSales) : '—'}</td>
     </tr>`;
 
-  const subHdr = (label: string, fid: number, con: number, total: number, pct: number, bg: string) => `
-    <tr style="background:${bg};font-weight:700">
-      <td style="padding:6px 8px">${label}</td>
-      <td style="padding:6px 8px;text-align:right;font-family:monospace">${fmtK(fid)}</td>
-      <td style="padding:6px 8px;text-align:right;font-family:monospace">${fmtK(con)}</td>
-      <td style="padding:6px 8px;text-align:right;font-family:monospace">${fmtK(total)}</td>
-      <td style="padding:6px 8px;text-align:right;font-family:monospace">${fmtPct(pct)}</td>
+  const mkCatHeader = (label: string, lr: LineResult, cls: string) =>
+    `<tr class="cat-header ${cls}">
+      <td>${label}</td>
+      <td class="num">${fmtK(lr.fid)}</td>
+      <td class="num">${fmtK(lr.con)}</td>
+      <td class="num">${fmtK(lr.total)}</td>
+      <td class="num">${fP(lr.pctSales)}</td>
     </tr>`;
 
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prefactibilidad — ${inp.projectName}</title>
 <style>
-  body { font-family: Arial, sans-serif; font-size: 12px; background:#f1f5f9; margin:0; }
-  .page { max-width:1000px; margin:24px auto; background:#fff; border-radius:10px; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,.12); }
-  .hdr { background:linear-gradient(135deg,#1e3a8a,#2563eb); color:#fff; padding:28px 36px 22px; }
-  .hdr-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
-  .hdr-title { font-size:22px; font-weight:700; }
-  .hdr-badge { background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.3); border-radius:16px; padding:3px 12px; font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; }
-  .meta { background:#f8fafc; border-bottom:1px solid #e5e7eb; padding:12px 36px; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-  .meta-lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:#6b7280; }
-  .meta-val { font-size:13px; font-weight:600; color:#111; margin-top:2px; }
-  .body { padding:28px 36px; }
-  .section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#1e40af; border-bottom:2px solid #dbeafe; padding-bottom:6px; margin:20px 0 10px; }
-  table { width:100%; border-collapse:collapse; font-size:11px; }
-  thead th { background:#1e3a8a; color:#fff; padding:7px 8px; text-align:left; font-size:10px; letter-spacing:.4px; }
-  tbody tr:nth-child(even) { background:#f8fafc; }
-  tbody tr td { border-bottom:1px solid #e5e7eb; }
-  .kpi-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:16px 0; }
-  .kpi { background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:12px 16px; }
-  .kpi-lbl { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:#6b7280; }
-  .kpi-val { font-size:18px; font-weight:700; margin-top:4px; }
-  .green { color:#15803d; } .amber { color:#b45309; } .blue { color:#1d4ed8; }
-  .footer { border-top:1px solid #e5e7eb; padding:14px 36px; background:#f8fafc; font-size:10px; color:#9ca3af; display:flex; justify-content:space-between; }
-  @media print { body { background:white; } .page { margin:0; border-radius:0; box-shadow:none; } }
+  :root {
+    --primary: #1e40af;
+    --primary-light: #dbeafe;
+    --success: #15803d;
+    --success-bg: #dcfce7;
+    --danger: #b91c1c;
+    --danger-bg: #fee2e2;
+    --warning: #b45309;
+    --warning-bg: #fef3c7;
+    --text: #1e293b;
+    --muted: #64748b;
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 13px; background: var(--bg); color: var(--text); line-height: 1.5; }
+
+  .page { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  /* ─ Header ─ */
+  .header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+    color: white; border-radius: var(--radius); padding: 32px 40px 28px; margin-bottom: 24px;
+    position: relative; overflow: hidden;
+  }
+  .header::after {
+    content: ''; position: absolute; top: -50%; right: -10%; width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  .header-top { display: flex; justify-content: space-between; align-items: flex-start; position: relative; z-index: 1; }
+  .header-badge {
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px; padding: 4px 14px; font-size: 10px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; backdrop-filter: blur(4px);
+  }
+  .header h1 { font-size: 26px; font-weight: 800; margin: 4px 0 6px; letter-spacing: -0.5px; }
+  .header-sub { font-size: 12px; opacity: 0.75; }
+  .promoter { font-size: 13px; opacity: 0.85; margin-bottom: 2px; }
+
+  /* ─ Meta grid ─ */
+  .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .meta-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 18px; transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .meta-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .meta-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+  .meta-val { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 4px; }
+
+  /* ─ Section titles ─ */
+  .section {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 24px; overflow: hidden;
+  }
+  .section-header {
+    padding: 12px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+    user-select: none; transition: background 0.2s;
+  }
+  .section-header:hover { filter: brightness(0.95); }
+  .section-header .arrow { transition: transform 0.3s; font-size: 14px; }
+  .section-header.collapsed .arrow { transform: rotate(-90deg); }
+  .section-body { transition: max-height 0.4s ease, opacity 0.3s; overflow: hidden; }
+  .section-body.hidden { max-height: 0 !important; opacity: 0; }
+
+  /* ─ Tables ─ */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th {
+    background: var(--primary); color: white; padding: 8px 10px;
+    text-align: left; font-size: 10px; letter-spacing: 0.5px; font-weight: 600;
+  }
+  thead th.num { text-align: right; }
+  .detail-row td { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+  .detail-row:hover { background: #f1f5f9; }
+  .detail-row.indent td:first-child { padding-left: 28px; color: var(--muted); }
+  .detail-row .dot { color: #94a3b8; margin-right: 4px; }
+  td.num { text-align: right; font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size: 11px; }
+  td.bold { font-weight: 700; }
+  td.muted { color: var(--muted); }
+
+  .cat-header td { padding: 7px 10px; font-weight: 700; font-size: 11px; }
+  .cat-header.lote { background: var(--warning-bg); color: #92400e; }
+  .cat-header.urbanismo { background: #ffedd5; color: #9a3412; }
+  .cat-header.directos { background: var(--primary-light); color: #1e40af; }
+  .cat-header.indirectos { background: #f3e8ff; color: #6b21a8; }
+  .cat-header.financieros { background: var(--danger-bg); color: #991b1b; }
+  .cat-header.ventas-cat { background: var(--success-bg); color: #166534; }
+
+  .total-row td { padding: 10px; background: #1e293b; color: white; font-weight: 700; font-size: 12px; }
+  .sales-row td { padding: 8px 10px; background: #475569; color: white; font-weight: 600; }
+  .profit-row td { padding: 10px; font-weight: 700; font-size: 13px; color: white; }
+  .profit-row.positive td { background: var(--success); }
+  .profit-row.negative td { background: var(--danger); }
+
+  /* ─ KPIs ─ */
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 20px; }
+  .kpi {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px;
+    transition: transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden;
+  }
+  .kpi:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .kpi::before {
+    content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%;
+    border-radius: 4px 0 0 4px;
+  }
+  .kpi.ok::before { background: var(--success); }
+  .kpi.warn::before { background: var(--warning); }
+  .kpi.info::before { background: var(--primary); }
+  .kpi-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--muted); font-weight: 600; }
+  .kpi-val { font-size: 22px; font-weight: 800; margin: 6px 0 4px; }
+  .kpi-sub { font-size: 10px; color: var(--muted); }
+  .kpi.ok .kpi-val { color: var(--success); }
+  .kpi.warn .kpi-val { color: var(--warning); }
+  .kpi.info .kpi-val { color: var(--primary); }
+
+  /* ─ Chart (CSS only) ─ */
+  .chart-section { padding: 20px; }
+  .chart-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin-bottom: 14px; }
+  .bar-chart { display: flex; flex-direction: column; gap: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label { width: 100px; font-size: 11px; font-weight: 600; text-align: right; flex-shrink: 0; }
+  .bar-track { flex: 1; height: 28px; background: #f1f5f9; border-radius: 6px; overflow: hidden; position: relative; }
+  .bar-fill {
+    height: 100%; border-radius: 6px; display: flex; align-items: center; padding: 0 10px;
+    font-size: 10px; font-weight: 700; color: white; white-space: nowrap;
+    animation: barGrow 0.8s ease-out forwards; transform-origin: left;
+  }
+  @keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .bar-value { font-size: 11px; font-weight: 600; color: var(--text); width: 90px; text-align: right; flex-shrink: 0; }
+
+  /* ─ Sources donut (CSS) ─ */
+  .sources-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; }
+  .source-list { display: flex; flex-direction: column; gap: 10px; }
+  .source-item { display: flex; align-items: center; gap: 10px; }
+  .source-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .source-info { flex: 1; }
+  .source-name { font-size: 11px; font-weight: 600; }
+  .source-val { font-size: 10px; color: var(--muted); font-family: monospace; }
+
+  /* ─ Footer ─ */
+  .footer {
+    border-top: 1px solid var(--border); padding: 16px 24px; display: flex;
+    justify-content: space-between; font-size: 10px; color: var(--muted);
+    margin-top: 32px;
+  }
+
+  /* ─ Print ─ */
+  @media print {
+    *, *::before, *::after {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+    body { background: white !important; font-size: 11px; margin: 0; padding: 0; }
+    .page { padding: 0; max-width: 100%; box-shadow: none !important; }
+    .header { border-radius: 0; page-break-after: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    .section { border-radius: 0; box-shadow: none !important; page-break-inside: auto; }
+    .section-header { cursor: default; page-break-after: avoid; }
+    .section-body { page-break-before: avoid; }
+
+    /* Force ALL sections open for print */
+    .section-body, .section-body.hidden {
+      max-height: none !important;
+      opacity: 1 !important;
+      overflow: visible !important;
+      display: block !important;
+      visibility: visible !important;
+    }
+    .section-header .arrow { display: none !important; }
+
+    /* Disable ALL hover effects */
+    .meta-card, .meta-card:hover,
+    .kpi, .kpi:hover { transform: none !important; box-shadow: none !important; }
+
+    /* CRITICAL: Force bars visible — animation starts at scaleX(0) */
+    .bar-fill {
+      animation: none !important;
+      transform: scaleX(1) !important;
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+    .bar-track {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Force background colors on KPI indicators */
+    .kpi::before {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Source dots */
+    .source-dot {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Table rows with backgrounds */
+    .cat-header, .total-row, .sales-row, .profit-row {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+    thead th {
+      print-color-adjust: exact !important;
+      -webkit-print-color-adjust: exact !important;
+    }
+
+    /* Hide non-print elements */
+    .no-print { display: none !important; }
+
+    /* Tooltips should never show in print */
+    [data-tooltip]::after { display: none !important; }
+    [data-tooltip] { cursor: default; }
+
+    /* Page break rules */
+    .kpi-grid { page-break-inside: avoid; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; }
+    thead { display: table-header-group; }
+    .footer { page-break-before: auto; margin-top: 16px; }
+
+    @page { margin: 1.5cm 1cm; }
+    @page :first { margin-top: 1cm; }
+  }
+
+  /* ─ Tooltips ─ */
+  [data-tooltip] { position: relative; cursor: help; }
+  [data-tooltip]:hover::after {
+    content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%;
+    transform: translateX(-50%); background: #1e293b; color: white;
+    padding: 4px 10px; border-radius: 6px; font-size: 10px; white-space: nowrap;
+    z-index: 10; pointer-events: none;
+    animation: tooltipIn 0.2s ease;
+  }
+  @keyframes tooltipIn { from { opacity: 0; transform: translateX(-50%) translateY(4px); } }
+
+  /* ─ Responsive ─ */
+  @media (max-width: 768px) {
+    .meta { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid { grid-template-columns: 1fr; }
+    .sources-grid { grid-template-columns: 1fr; }
+    .header { padding: 20px 24px; }
+    .header h1 { font-size: 20px; }
+  }
 </style>
 </head>
 <body>
 <div class="page">
-  <div class="hdr">
-    <div class="hdr-top">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-top">
       <div>
-        <div style="font-size:12px;opacity:.8;margin-bottom:4px">${inp.promoter}</div>
-        <div class="hdr-title">${inp.projectName}</div>
+        <div class="promoter">${inp.promoter}</div>
+        <h1>${inp.projectName}</h1>
+        <div class="header-sub">Cifras en miles de COP · ${date}</div>
       </div>
-      <div class="hdr-badge">Prefactibilidad CREDICORP</div>
+      <div class="header-badge">Prefactibilidad CREDICORP</div>
     </div>
-    <div style="font-size:11px;opacity:.7">Cifras en miles de COP · ${new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
   </div>
 
+  <!-- META -->
   <div class="meta">
-    <div><div class="meta-lbl">Ciudad</div><div class="meta-val">${inp.city}</div></div>
-    <div><div class="meta-lbl"># Unidades</div><div class="meta-val">${inp.totalUnits} uds · Est. ${inp.stratum}</div></div>
-    <div><div class="meta-lbl">M² Vendibles</div><div class="meta-val">${r.saleableAreaM2.toLocaleString('es-CO', { maximumFractionDigits: 1 })} m²</div></div>
-    <div><div class="meta-lbl">Sistema constructivo</div><div class="meta-val">${inp.constructionSystem}</div></div>
+    <div class="meta-card"><div class="meta-lbl">Ciudad</div><div class="meta-val">${inp.city}</div></div>
+    <div class="meta-card"><div class="meta-lbl"># Unidades</div><div class="meta-val">${inp.totalUnits} uds · Est. ${inp.stratum}</div></div>
+    <div class="meta-card"><div class="meta-lbl">M² Vendibles</div><div class="meta-val">${r.saleableAreaM2.toLocaleString('es-CO', { maximumFractionDigits: 1 })} m²</div></div>
+    <div class="meta-card"><div class="meta-lbl">Sistema</div><div class="meta-val">${inp.constructionSystem}</div></div>
   </div>
 
-  <div class="body">
-
-    <div class="section-title">Estructura de Costos</div>
-    <table>
-      <thead><tr><th style="width:40%">CONCEPTO</th><th style="width:15%;text-align:right">FIDEICOMISO</th><th style="width:15%;text-align:right">CONSTRUCTOR</th><th style="width:15%;text-align:right">TOTAL</th><th style="width:15%;text-align:right">% VENTAS</th></tr></thead>
-      <tbody>
-        ${subHdr(`LOTE (${(inp.lotePct*100).toFixed(1)}% s/ventas)`, r.lote.fid, 0, r.lote.total, r.lote.pctSales, '#fef3c7')}
-        ${subHdr('URBANISMO', r.urbanismo.fid, r.urbanismo.con, r.urbanismo.total, r.urbanismo.pctSales, '#ffedd5')}
-        ${subHdr('COSTOS DIRECTOS (EDIFICACIONES)', r.directos.fid, r.directos.con, r.directos.total, r.directos.pctSales, '#eff6ff')}
-        ${subHdr('COSTOS INDIRECTOS', r.indirectos.subtotal.fid, r.indirectos.subtotal.con, r.indirectos.subtotal.total, r.indirectos.subtotal.pctSales, '#faf5ff')}
-        ${row('Honorarios Administración y Construcción', r.indirectos.honorariosAdmin.fid, r.indirectos.honorariosAdmin.con, r.indirectos.honorariosAdmin.total, r.indirectos.honorariosAdmin.pctSales, true)}
-        ${row('Diseño, Estudios Técnicos, Asesorías', r.indirectos.disenoEstudios.fid, r.indirectos.disenoEstudios.con, r.indirectos.disenoEstudios.total, r.indirectos.disenoEstudios.pctSales, true)}
-        ${row('Interventoría y Supervisión Estructural', r.indirectos.interventoria.fid, r.indirectos.interventoria.con, r.indirectos.interventoria.total, r.indirectos.interventoria.pctSales, true)}
-        ${row('Licencias (Urbanismo, Construcción, Ambiental)', r.indirectos.licencias.fid, r.indirectos.licencias.con, r.indirectos.licencias.total, r.indirectos.licencias.pctSales, true)}
-        ${row('Seguros', r.indirectos.seguros.fid, r.indirectos.seguros.con, r.indirectos.seguros.total, r.indirectos.seguros.pctSales, true)}
-        ${row('Derechos e Impuestos', r.indirectos.derechosImpuestos.fid, r.indirectos.derechosImpuestos.con, r.indirectos.derechosImpuestos.total, r.indirectos.derechosImpuestos.pctSales, true)}
-        ${row('Conexión de Servicios', r.indirectos.conexionServicios.fid, r.indirectos.conexionServicios.con, r.indirectos.conexionServicios.total, r.indirectos.conexionServicios.pctSales, true)}
-        ${row('Imprevistos', r.indirectos.imprevistos.fid, r.indirectos.imprevistos.con, r.indirectos.imprevistos.total, r.indirectos.imprevistos.pctSales, true)}
-        ${row('Previsión al Alza', r.indirectos.previsionAlza.fid, r.indirectos.previsionAlza.con, r.indirectos.previsionAlza.total, r.indirectos.previsionAlza.pctSales, true)}
-        ${subHdr('COSTOS FINANCIEROS', r.financieros.subtotal.fid, r.financieros.subtotal.con, r.financieros.subtotal.total, r.financieros.subtotal.pctSales, '#fef2f2')}
-        ${row('Fiducia', r.financieros.fiducia.fid, r.financieros.fiducia.con, r.financieros.fiducia.total, r.financieros.fiducia.pctSales, true)}
-        ${row('Intereses Crédito (Constructor, Puentes)', r.financieros.interesesCredito.fid, r.financieros.interesesCredito.con, r.financieros.interesesCredito.total, r.financieros.interesesCredito.pctSales, true)}
-        ${subHdr('COSTOS DE VENTAS', r.ventasCostos.subtotal.fid, r.ventasCostos.subtotal.con, r.ventasCostos.subtotal.total, r.ventasCostos.subtotal.pctSales, '#f0fdf4')}
-        ${row('Honorarios de Ventas', r.ventasCostos.honorariosVentas.fid, r.ventasCostos.honorariosVentas.con, r.ventasCostos.honorariosVentas.total, r.ventasCostos.honorariosVentas.pctSales, true)}
-        ${row('Honorarios de Gerencia', r.ventasCostos.honorariosGerencia.fid, r.ventasCostos.honorariosGerencia.con, r.ventasCostos.honorariosGerencia.total, r.ventasCostos.honorariosGerencia.pctSales, true)}
-        ${row('Honorarios Diseño/Arquitectónicos', r.ventasCostos.disenoArquitectonico.fid, r.ventasCostos.disenoArquitectonico.con, r.ventasCostos.disenoArquitectonico.total, r.ventasCostos.disenoArquitectonico.pctSales, true)}
-        ${row('Promoción y Publicidad', r.ventasCostos.publicidad.fid, r.ventasCostos.publicidad.con, r.ventasCostos.publicidad.total, r.ventasCostos.publicidad.pctSales, true)}
-        ${row('Notariales', r.ventasCostos.notariales.fid, r.ventasCostos.notariales.con, r.ventasCostos.notariales.total, r.ventasCostos.notariales.pctSales, true)}
-        <tr style="background:#1e293b;color:#fff;font-weight:700">
-          <td style="padding:8px">TOTAL USOS</td>
-          <td style="padding:8px;text-align:right;font-family:monospace">${fmtK(r.totalUsos.fid)}</td>
-          <td style="padding:8px;text-align:right;font-family:monospace">${fmtK(r.totalUsos.con)}</td>
-          <td style="padding:8px;text-align:right;font-family:monospace;color:#93c5fd">${fmtK(r.totalUsos.total)}</td>
-          <td style="padding:8px;text-align:right;font-family:monospace;color:#93c5fd">${fmtPct(r.totalUsos.pctSales)}</td>
-        </tr>
-        <tr style="background:#475569;color:#fff;font-weight:600">
-          <td style="padding:7px 8px">VENTAS / APORTES TOTALES</td>
-          <td style="padding:7px 8px;text-align:right;font-family:monospace">${fmtK(r.totalSales)}</td>
-          <td style="padding:7px 8px;text-align:right;color:#cbd5e1">—</td>
-          <td style="padding:7px 8px;text-align:right;font-family:monospace">${fmtK(r.totalSales)}</td>
-          <td style="padding:7px 8px;text-align:right">100,00%</td>
-        </tr>
-        <tr style="background:${r.utilidad >= 0 ? '#15803d' : '#b91c1c'};color:#fff;font-weight:700">
-          <td style="padding:8px">UTILIDAD ESTIMADA (miles COP)</td>
-          <td colspan="2"></td>
-          <td style="padding:8px;text-align:right;font-family:monospace;font-size:15px">${fmtK(r.utilidad)}</td>
-          <td style="padding:8px;text-align:right">${fmtPct(r.utilidadPct)}</td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="section-title">Indicadores Financieros</div>
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-lbl">Utilidad estimada</div><div class="kpi-val ${r.utilidad >= 0 ? 'green' : ''}" style="color:${r.utilidad >= 0 ? '#15803d':'#dc2626'}">$${fmtK(r.utilidad)} M</div><div style="font-size:10px;color:#6b7280;margin-top:3px">miles COP</div></div>
-      <div class="kpi"><div class="kpi-lbl">Margen sobre ventas</div><div class="kpi-val ${r.utilidadPct >= 0.12 ? 'green':'amber'}">${fmtPct(r.utilidadPct)}</div><div style="font-size:10px;color:#6b7280;margin-top:3px">${r.utilidadPct >= 0.12 ? '✓ Viable (≥12%)':'⚠ Bajo (<12%)'}</div></div>
-      <div class="kpi"><div class="kpi-lbl">ROI sobre inversión</div><div class="kpi-val blue">${r.roi.toFixed(1)}%</div><div style="font-size:10px;color:#6b7280;margin-top:3px">utilidad / total usos</div></div>
-      <div class="kpi"><div class="kpi-lbl">Punto de equilibrio</div><div class="kpi-val" style="color:${r.breakEvenPct <= 0.9 ? '#0d9488':'#dc2626'}">${r.breakEvenUnits} unidades</div><div style="font-size:10px;color:#6b7280;margin-top:3px">${fmtPct(r.breakEvenPct)} de ${inp.totalUnits}</div></div>
-      <div class="kpi"><div class="kpi-lbl">Precio por unidad</div><div class="kpi-val" style="color:#334155">$${fmtK(r.pricePerUnit)}</div><div style="font-size:10px;color:#6b7280;margin-top:3px">miles COP / unidad</div></div>
-      <div class="kpi"><div class="kpi-lbl">Costo / m² vendible</div><div class="kpi-val" style="color:#334155">$${r.saleableAreaM2 > 0 ? new Intl.NumberFormat('es-CO',{maximumFractionDigits:0}).format(r.totalUsos.total/r.saleableAreaM2) : '—'}</div><div style="font-size:10px;color:#6b7280;margin-top:3px">COP / m²</div></div>
+  <!-- KPIs -->
+  <div class="section">
+    <div class="section-header" style="background:var(--primary-light);color:var(--primary)" onclick="toggleSection(this)">
+      <span class="arrow">▼</span> INDICADORES FINANCIEROS
     </div>
-
-    <div class="section-title">Fuentes y Usos</div>
-    <table>
-      <thead><tr><th>FUENTE</th><th style="text-align:right">MILES COP</th><th style="text-align:right">% TOTAL USOS</th></tr></thead>
-      <tbody>
-        <tr><td style="padding:5px 8px">Aporte de Socios</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${fmtK(r.aportesSocios)}</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${r.totalUsos.total > 0 ? fmtPct(r.aportesSocios/r.totalUsos.total) : '—'}</td></tr>
-        <tr style="background:#f8fafc"><td style="padding:5px 8px">Crédito Constructor</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${fmtK(r.creditoConstructor)}</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${r.totalUsos.total > 0 ? fmtPct(r.creditoConstructor/r.totalUsos.total) : '—'}</td></tr>
-        <tr><td style="padding:5px 8px">Cuotas Iniciales (${Math.round(inp.initialPaymentPct*100)}% s/ventas)</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${fmtK(r.cuotasIniciales)}</td><td style="padding:5px 8px;text-align:right;font-family:monospace">${r.totalUsos.total > 0 ? fmtPct(r.cuotasIniciales/r.totalUsos.total) : '—'}</td></tr>
-        <tr style="background:#1e3a8a;color:#fff;font-weight:700"><td style="padding:7px 8px">TOTAL FUENTES = TOTAL USOS</td><td style="padding:7px 8px;text-align:right;font-family:monospace">${fmtK(r.totalFuentes)}</td><td style="padding:7px 8px;text-align:right">100,00%</td></tr>
-      </tbody>
-    </table>
-
+    <div class="section-body">
+      <div class="kpi-grid">
+        <div class="kpi ${r.utilidad >= 0 ? 'ok' : 'warn'}" data-tooltip="Ventas − Total Usos">
+          <div class="kpi-lbl">Utilidad estimada</div>
+          <div class="kpi-val">$${fmtK(r.utilidad)}</div>
+          <div class="kpi-sub">miles COP</div>
+        </div>
+        <div class="kpi ${r.utilidadPct >= 0.12 ? 'ok' : 'warn'}" data-tooltip="Utilidad ÷ Ventas × 100">
+          <div class="kpi-lbl">Margen s/ventas</div>
+          <div class="kpi-val">${fP(r.utilidadPct)}</div>
+          <div class="kpi-sub">${r.utilidadPct >= 0.12 ? '✓ Viable (≥12%)' : '⚠ Bajo (<12%)'}</div>
+        </div>
+        <div class="kpi info" data-tooltip="Utilidad ÷ Total Usos × 100">
+          <div class="kpi-lbl">ROI s/inversión</div>
+          <div class="kpi-val">${r.roi.toFixed(1)}%</div>
+          <div class="kpi-sub">utilidad / total usos</div>
+        </div>
+        <div class="kpi ${r.breakEvenPct <= 0.9 ? 'ok' : 'warn'}" data-tooltip="Total Usos ÷ Precio por unidad">
+          <div class="kpi-lbl">Punto de equilibrio</div>
+          <div class="kpi-val">${r.breakEvenUnits} uds</div>
+          <div class="kpi-sub">${fP(r.breakEvenPct)} de ${inp.totalUnits}</div>
+        </div>
+        <div class="kpi info" data-tooltip="Ventas ÷ # Unidades">
+          <div class="kpi-lbl">Precio / unidad</div>
+          <div class="kpi-val">$${fmtK(r.pricePerUnit)}</div>
+          <div class="kpi-sub">miles COP / unidad</div>
+        </div>
+        <div class="kpi info" data-tooltip="Total Usos ÷ M² vendibles">
+          <div class="kpi-lbl">Costo / m²</div>
+          <div class="kpi-val">$${r.saleableAreaM2 > 0 ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(r.totalUsos.total / r.saleableAreaM2) : '—'}</div>
+          <div class="kpi-sub">COP / m² vendible</div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- COST DISTRIBUTION CHART -->
+  <div class="section">
+    <div class="section-header" style="background:#f1f5f9;color:var(--text)" onclick="toggleSection(this)">
+      <span class="arrow">▼</span> DISTRIBUCIÓN DE COSTOS
+    </div>
+    <div class="section-body">
+      <div class="chart-section">
+        <div class="chart-title">Composición porcentual sobre ventas</div>
+        <div class="bar-chart">
+          ${costParts
+            .map(
+              (p) => `
+          <div class="bar-row">
+            <div class="bar-label">${p.label}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:${maxCost > 0 ? (p.val / maxCost) * 100 : 0}%;background:${p.color}">
+                ${fP(r.totalSales > 0 ? p.val / r.totalSales : 0)}
+              </div>
+            </div>
+            <div class="bar-value">$${fmtK(p.val)}</div>
+          </div>`,
+            )
+            .join('')}
+        </div>
+      </div>
+
+      <!-- Sources breakdown -->
+      <div class="sources-grid">
+        <div>
+          <div class="chart-title">Fuentes de financiación</div>
+          <div class="source-list">
+            ${sourceParts
+              .map(
+                (s) => `
+            <div class="source-item">
+              <div class="source-dot" style="background:${s.color}"></div>
+              <div class="source-info">
+                <div class="source-name">${s.label}</div>
+                <div class="source-val">$${fmtK(s.val)} · ${r.totalUsos.total > 0 ? fP(s.val / r.totalUsos.total) : '—'}</div>
+              </div>
+            </div>`,
+              )
+              .join('')}
+          </div>
+        </div>
+        <div>
+          <div class="chart-title">Balance</div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+            <div style="font-size:36px;font-weight:800;color:${Math.abs(r.balance) < 1000 ? 'var(--success)' : 'var(--danger)'}">
+              ${Math.abs(r.balance) < 1000 ? '✓' : '⚠'}
+            </div>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:${Math.abs(r.balance) < 1000 ? 'var(--success)' : 'var(--danger)'}">
+                ${Math.abs(r.balance) < 1000 ? 'Fuentes cuadradas' : `Descuadre: $${fmtK(Math.abs(r.balance))}`}
+              </div>
+              <div style="font-size:11px;color:var(--muted)">Total fuentes = Total usos</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COST TABLE -->
+  <div class="section">
+    <div class="section-header" style="background:var(--primary);color:white" onclick="toggleSection(this)">
+      <span class="arrow">▼</span> ESTRUCTURA DE COSTOS DETALLADA
+    </div>
+    <div class="section-body">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40%">CONCEPTO</th>
+            <th class="num" style="width:15%">FIDEICOMISO</th>
+            <th class="num" style="width:15%">CONSTRUCTOR</th>
+            <th class="num" style="width:15%">TOTAL</th>
+            <th class="num" style="width:15%">% VENTAS</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mkCatHeader(`LOTE (${(inp.lotePct * 100).toFixed(1)}% s/ventas)`, r.lote, 'lote')}
+          ${mkCatHeader('URBANISMO', r.urbanismo, 'urbanismo')}
+          ${mkCatHeader('COSTOS DIRECTOS (EDIFICACIONES)', r.directos, 'directos')}
+          ${mkCatHeader('COSTOS INDIRECTOS', r.indirectos.subtotal, 'indirectos')}
+          ${indirectRows.map(([l, lr]) => mkRow(l, lr, true)).join('')}
+          ${mkCatHeader('COSTOS FINANCIEROS', r.financieros.subtotal, 'financieros')}
+          ${finRows.map(([l, lr]) => mkRow(l, lr, true)).join('')}
+          ${mkCatHeader('COSTOS DE VENTAS', r.ventasCostos.subtotal, 'ventas-cat')}
+          ${ventasRows.map(([l, lr]) => mkRow(l, lr, true)).join('')}
+          <tr class="total-row">
+            <td>TOTAL USOS</td>
+            <td class="num">${fmtK(r.totalUsos.fid)}</td>
+            <td class="num">${fmtK(r.totalUsos.con)}</td>
+            <td class="num" style="color:#93c5fd">${fmtK(r.totalUsos.total)}</td>
+            <td class="num" style="color:#93c5fd">${fP(r.totalUsos.pctSales)}</td>
+          </tr>
+          <tr class="sales-row">
+            <td>VENTAS / APORTES TOTALES</td>
+            <td class="num">${fmtK(r.totalSales)}</td>
+            <td class="num" style="opacity:0.5">—</td>
+            <td class="num">${fmtK(r.totalSales)}</td>
+            <td class="num">100,00%</td>
+          </tr>
+          <tr class="profit-row ${r.utilidad >= 0 ? 'positive' : 'negative'}">
+            <td>UTILIDAD ESTIMADA (miles COP)</td>
+            <td colspan="2"></td>
+            <td class="num" style="font-size:15px">${fmtK(r.utilidad)}</td>
+            <td class="num">${fP(r.utilidadPct)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
   <div class="footer">
     <span>Generado: ${new Date().toLocaleString('es-CO')}</span>
-    <span>${inp.projectName} · Modelo CREDICORP · Cifras en miles de COP</span>
+    <span>${inp.projectName} · Modelo CREDICORP</span>
+    <button class="no-print" onclick="preparePrint()" style="background:var(--primary);color:white;border:none;padding:6px 16px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">
+      🖨 Imprimir
+    </button>
   </div>
+
 </div>
+
+<script>
+function toggleSection(header) {
+  const body = header.nextElementSibling;
+  header.classList.toggle('collapsed');
+  body.classList.toggle('hidden');
+}
+
+function preparePrint() {
+  // 1. Expand all collapsed sections
+  const collapsedHeaders = document.querySelectorAll('.section-header.collapsed');
+  const hiddenBodies = document.querySelectorAll('.section-body.hidden');
+  collapsedHeaders.forEach(h => h.classList.remove('collapsed'));
+  hiddenBodies.forEach(b => b.classList.remove('hidden'));
+
+  // 2. Force bar animations to end state
+  document.querySelectorAll('.bar-fill').forEach(bar => {
+    bar.style.animation = 'none';
+    bar.style.transform = 'scaleX(1)';
+  });
+
+  // 3. Small delay to let browser reflow, then print
+  setTimeout(() => {
+    window.print();
+
+    // 4. Restore collapsed state after print dialog closes
+    setTimeout(() => {
+      collapsedHeaders.forEach(h => h.classList.add('collapsed'));
+      hiddenBodies.forEach(b => b.classList.add('hidden'));
+      document.querySelectorAll('.bar-fill').forEach(bar => {
+        bar.style.animation = '';
+        bar.style.transform = '';
+      });
+    }, 500);
+  }, 100);
+}
+</script>
 </body>
 </html>`;
 }

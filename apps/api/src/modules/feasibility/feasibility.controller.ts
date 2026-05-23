@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -12,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { z } from 'zod';
 import {
@@ -28,24 +30,34 @@ import {
 import { Audit } from '../audit/audit.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { FeasibilityService } from './feasibility.service';
+import {
+  FeasibilityService,
+  type FeasibilityFullResponse,
+  type IndicatorsResponse,
+} from './feasibility.service';
 
 const CostItemsArraySchema = z.array(FeasibilityCostItemInputSchema);
 const CashFlowArraySchema = z.array(FeasibilityCashFlowInputSchema);
 
+@ApiTags('Prefactibilidad')
 @Controller('projects/:projectId/feasibility')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class FeasibilityController {
   constructor(private readonly feasibility: FeasibilityService) {}
 
   @Get('')
-  getByProject(@Param('projectId', ParseUUIDPipe) projectId: string) {
+  @ApiOperation({ summary: 'Obtener análisis completo de prefactibilidad' })
+  @ApiParam({ name: 'projectId', description: 'UUID del proyecto' })
+  getByProject(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ): Promise<FeasibilityFullResponse> {
     return this.feasibility.getByProject(projectId);
   }
 
   @Patch('')
   @Roles('GERENTE')
   @Audit({ action: 'UPDATE', entityType: 'FeasibilityAnalysis' })
+  @ApiOperation({ summary: 'Actualizar datos generales del análisis' })
   updateAnalysis(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body(new ZodValidationPipe(FeasibilityAnalysisInputSchema)) dto: FeasibilityAnalysisInput,
@@ -56,6 +68,7 @@ export class FeasibilityController {
   @Put('cost-items')
   @Roles('GERENTE')
   @Audit({ action: 'UPDATE', entityType: 'FeasibilityCostItem' })
+  @ApiOperation({ summary: 'Reemplazar estructura de costos completa' })
   replaceCostItems(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body(new ZodValidationPipe(CostItemsArraySchema)) items: FeasibilityCostItemInput[],
@@ -66,6 +79,7 @@ export class FeasibilityController {
   @Put('cashflow')
   @Roles('GERENTE')
   @Audit({ action: 'UPDATE', entityType: 'FeasibilityCashFlow' })
+  @ApiOperation({ summary: 'Reemplazar flujo de caja mensual completo' })
   replaceCashFlow(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body(new ZodValidationPipe(CashFlowArraySchema)) rows: FeasibilityCashFlowInput[],
@@ -76,13 +90,15 @@ export class FeasibilityController {
   @Post('recalculate')
   @Roles('GERENTE')
   @Audit({ action: 'UPDATE', entityType: 'FeasibilityAnalysis' })
-  recalculate(@Param('projectId', ParseUUIDPipe) projectId: string) {
+  @ApiOperation({ summary: 'Recalcular TIR, VPN y payback desde el flujo de caja' })
+  recalculate(@Param('projectId', ParseUUIDPipe) projectId: string): Promise<IndicatorsResponse> {
     return this.feasibility.recalculateIndicators(projectId);
   }
 
   @Post('scenarios')
   @Roles('GERENTE')
   @Audit({ action: 'CREATE', entityType: 'FeasibilityScenario' })
+  @ApiOperation({ summary: 'Crear escenario de sensibilidad (what-if)' })
   createScenario(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body(new ZodValidationPipe(FeasibilityScenarioInputSchema)) dto: FeasibilityScenarioInput,
@@ -92,9 +108,13 @@ export class FeasibilityController {
 
   @Delete('scenarios/:id')
   @Roles('GERENTE')
-  @HttpCode(204)
+  @HttpCode(HttpStatus.NO_CONTENT)
   @Audit({ action: 'DELETE', entityType: 'FeasibilityScenario', entityIdParam: 'id' })
-  deleteScenario(@Param('id', ParseUUIDPipe) id: string) {
-    return this.feasibility.deleteScenario(id);
+  @ApiOperation({ summary: 'Eliminar escenario de sensibilidad' })
+  deleteScenario(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    return this.feasibility.deleteScenario(projectId, id);
   }
 }

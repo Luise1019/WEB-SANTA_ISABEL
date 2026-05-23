@@ -43,12 +43,12 @@ const CATEGORIES = [
 ];
 
 const CAT_COLOR: Record<string, string> = {
-  LOTE: 'bg-amber-100 text-amber-800',
-  URBANISMO: 'bg-orange-100 text-orange-800',
-  DIRECTO: 'bg-blue-100 text-blue-800',
-  INDIRECTO: 'bg-purple-100 text-purple-800',
-  FINANCIERO: 'bg-red-100 text-red-800',
-  VENTAS: 'bg-green-100 text-green-800',
+  LOTE: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+  URBANISMO: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+  DIRECTO: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+  INDIRECTO: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+  FINANCIERO: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  VENTAS: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
 };
 
 const fmtCOP = (v: string) => {
@@ -72,7 +72,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
   const [items, setItems] = useState<EditableItem[]>([]);
   const [dirty, setDirty] = useState(false);
 
-  const fd = data as unknown as { costItems?: CostItem[]; analysis?: { totalSales?: string | null } } | undefined;
+  const fd = data as unknown as
+    | { costItems?: CostItem[]; analysis?: { totalSales?: string | null } }
+    | undefined;
 
   useEffect(() => {
     if (fd?.costItems) {
@@ -142,7 +144,17 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
   const addRow = (category: string) => {
     setItems((prev) => [
       ...prev,
-      { key: newKey(), category, concept: '', fideicomisoValue: '', constructorValue: '', totalValue: '0', pctOfSales: '', order: prev.length, isNew: true },
+      {
+        key: newKey(),
+        category,
+        concept: '',
+        fideicomisoValue: '',
+        constructorValue: '',
+        totalValue: '0',
+        pctOfSales: '',
+        order: prev.length,
+        isNew: true,
+      },
     ]);
     setDirty(true);
   };
@@ -171,7 +183,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Estructura de costos</h1>
-          <p className="text-sm text-muted-foreground">Fideicomiso vs Constructor — Formato CREDICORP</p>
+          <p className="text-sm text-muted-foreground">
+            Fideicomiso vs Constructor — Formato CREDICORP
+          </p>
         </div>
         <Button
           onClick={() => saveMutation.mutate(items)}
@@ -195,7 +209,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
               <Card key={value}>
                 <CardHeader className="py-3 px-4 flex-row items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CAT_COLOR[value] ?? 'bg-gray-100'}`}>
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full ${CAT_COLOR[value] ?? 'bg-gray-100'}`}
+                    >
                       {label}
                     </span>
                     <span className="text-sm font-mono text-muted-foreground">
@@ -236,7 +252,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
                                   className="w-full text-right bg-transparent outline-none font-mono"
                                   placeholder="0"
                                   value={row.fideicomisoValue}
-                                  onChange={(e) => updateItem(row.key, 'fideicomisoValue', e.target.value)}
+                                  onChange={(e) =>
+                                    updateItem(row.key, 'fideicomisoValue', e.target.value)
+                                  }
                                 />
                               </td>
                               <td className="px-3 py-1.5">
@@ -244,7 +262,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
                                   className="w-full text-right bg-transparent outline-none font-mono"
                                   placeholder="0"
                                   value={row.constructorValue}
-                                  onChange={(e) => updateItem(row.key, 'constructorValue', e.target.value)}
+                                  onChange={(e) =>
+                                    updateItem(row.key, 'constructorValue', e.target.value)
+                                  }
                                 />
                               </td>
                               <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">
@@ -290,7 +310,9 @@ export default function FeasibilityCostsPage({ params }: { params: { id: string 
                         ${totalByCol.total.toLocaleString('es-CO')}
                       </td>
                       <td className="py-1 text-right font-mono px-3">
-                        {totalSales > 0 ? `${((totalByCol.total / totalSales) * 100).toFixed(1)}%` : '—'}
+                        {totalSales > 0
+                          ? `${((totalByCol.total / totalSales) * 100).toFixed(1)}%`
+                          : '—'}
                       </td>
                       <td className="w-8" />
                     </tr>
