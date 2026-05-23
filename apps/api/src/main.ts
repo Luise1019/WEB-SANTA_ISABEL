@@ -29,7 +29,12 @@ async function bootstrap() {
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
-          'connect-src': ["'self'", 'capacitor://localhost', 'http://localhost:*', 'ws://localhost:*'],
+          'connect-src': [
+            "'self'",
+            'capacitor://localhost',
+            'http://localhost:*',
+            'ws://localhost:*',
+          ],
           'img-src': ["'self'", 'data:', 'blob:', 'https:'],
         },
       },
@@ -50,7 +55,28 @@ async function bootstrap() {
 
   app.use(cookieParser());
   app.enableCors({
-    origin: config.get<string>('WEB_PUBLIC_URL', 'http://localhost:3000'),
+    origin: (origin, callback) => {
+      // Permitir requests sin origin (curl, Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      const allowed = [
+        config.get<string>('WEB_PUBLIC_URL', 'http://localhost:3000'),
+        'http://localhost:3000',
+        'http://localhost:4000',
+      ];
+
+      // Permitir cualquier subdominio de GitHub Codespaces / Gitpod
+      const isCodespaces =
+        origin.endsWith('.app.github.dev') ||
+        origin.endsWith('.preview.app.github.dev') ||
+        origin.endsWith('.gitpod.io');
+
+      if (allowed.includes(origin) || isCodespaces) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origen no permitido: ${origin}`));
+      }
+    },
     credentials: true,
   });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
@@ -58,7 +84,8 @@ async function bootstrap() {
 
   // OpenAPI / Swagger — solo en desarrollo o con flag explícita
   const swaggerEnabled =
-    config.get<string>('NODE_ENV') !== 'production' || config.get<string>('SWAGGER_ENABLED') === '1';
+    config.get<string>('NODE_ENV') !== 'production' ||
+    config.get<string>('SWAGGER_ENABLED') === '1';
   if (swaggerEnabled && !isWorker) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Santa Isabel API')
