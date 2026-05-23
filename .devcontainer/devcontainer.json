@@ -2,7 +2,7 @@
   "name": "Santa Isabel - Gestion Inmobiliaria",
   "dockerComposeFile": "docker-compose.yml",
   "service": "app",
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/workspaces/WEB-SANTA_ISABEL",
 
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
@@ -12,6 +12,9 @@
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers-contrib/features/pnpm:2": {
       "version": "9"
+    },
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
     }
   },
 
